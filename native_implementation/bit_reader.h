@@ -6,53 +6,71 @@
 #include <stdexcept>
 #include <vector>
 
+// See https://stackoverflow.com/questions/5513532/reading-binary-istream-byte-by-byte for file reading byte by byte.
 class BitReader {
 public:
-    explicit BitReader(std::istream& is) : in(is), buffer_(0), count_(8) {}
+    explicit BitReader(std::istream& is) : in(is), buffer_(0), count_(0) {}
 
-    // Return next bit from the stream.
-    // Read a new byte if needed.
+    // Read single bit from the stream.
     bool readBit() {
         if (count_ == 0) {
-            in >> buffer_;
+            refresh_buffer();
+            count_ = 8;
         }
-        --count_;
-        return Bit((in.peek() & 0x80) != 0);
+        count_--;
+
+        // 1.) Bitwise AND (0x80 = 10000000)
+        // 2.) Left shift buffer on 1 bit.
+        // 3.) If digit == 1, return true, false -- otherwise.
+        uint8_t digit = (buffer_ & 0x80);
+        buffer_ <<= 1;
+        bool res = digit != 0;
+        return res;
     }
 
-    // TODO: fix
+    // Read single byte from the stream.
+    uint8_t readByte() {
+        if (count_ == 0) {
+            refresh_buffer();
+            return buffer_;
+        }
+        uint8_t byte = buffer_;
+        refresh_buffer();
+        byte |= (buffer_ >> count_);
+        buffer_ <<= (8 - count_);
+        return byte;
+    }
+
+    // Read `nbits` bits from the stream.
     uint64_t readBits(int nbits) {
-        uint64_t result = 0;
+        uint64_t u64;
+
         while (nbits >= 8) {
-            if (!readByte()) {
-                throw std::runtime_error("Failed to read a byte");
-            }
-            result = (result << 8) | static_cast<uint64_t>(in.get());
+            uint8_t byte = readByte();
+            u64 = (u64 << 8) | static_cast<uint64_t>(byte);
             nbits -= 8;
         }
 
         while (nbits > 0) {
-            Bit bit = readBit();
-            if (bit == Bit::Zero) {
-                throw std::runtime_error("Unexpected end of input");
+            uint8_t byte = readBit();
+            u64 <<= 1;
+            if (byte) {
+                u64 |= 1;
             }
-            result <<= 1;
-            if (bit == Bit::One) {
-                result |= 1;
-            }
-            --nbits;
+            nbits--;
         }
 
-        return result;
+        return u64;
     }
 
 private:
-    bool readByte() {
-        char c;
-        if (!(in >> c)) {
-            return false;
-        }
-        return true;
+    // Read a new byte from the stream.
+    void refresh_buffer() {
+        char read_byte;
+        in.read(&read_byte, 1);
+        buffer_ = read_byte;
+        std::bitset<8> bit_char(read_byte);
+        std::cout << "New buffer: " << bit_char << std::endl;
     }
 
     std::istream& in;

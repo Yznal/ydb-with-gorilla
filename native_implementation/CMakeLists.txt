@@ -16,6 +16,13 @@ add_executable(
 )
 
 add_executable(
+        bit_wr_test
+        bit_wr_test.cpp
+        bit_writer.h
+        bit_reader.h
+)
+
+add_executable(
         custom_gorilla
         main.cpp
         bit_writer.h

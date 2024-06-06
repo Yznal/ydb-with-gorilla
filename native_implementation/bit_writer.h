@@ -8,10 +8,6 @@ class BitWriter {
 public:
     explicit BitWriter(std::ostream& os) : out(&os), buffer(0), count(8) {}
 
-    void write_buf() {
-        out->write(reinterpret_cast<const char*>(&buffer), sizeof(buffer));
-    }
-
     // Write a single bit at the available right-most position of the `buffer`.
     void writeBit(bool bit) {
         if (bit) {
@@ -21,7 +17,7 @@ public:
             //
             // 2. buffer |= mask
             // Apply bitwise OR assignment operator.
-            buffer |= 1 << (count - 1);
+            buffer |= (1 << (count - 1));
         }
         count--;
 
@@ -45,12 +41,15 @@ public:
         // Becase: 000111...00000000000000
         u64 <<= (64 - nbits);
         while (nbits >= 8) {
-            writeByte(static_cast<uint8_t>(u64 >> 56));
+            auto byte = static_cast<uint8_t>(u64 >> 56);
+            writeByte(byte);
             u64 <<= 8;
             nbits -= 8;
         }
+
         while (nbits > 0) {
-            writeBit((u64 >> 63) == 1);
+            bool bit = (u64 >> 63) == 1;
+            writeBit(bit);
 
             u64 <<= 1;
             nbits--;
@@ -58,22 +57,22 @@ public:
     }
 
     // Write a single byte to the stream, regardless of alignment.
-    void writeByte(uint8_t byt) {
+    void writeByte(uint8_t byte) {
         //            writing ->
         // buffer:         [xxx*****]
         //  x -- non-empty (3)
         //  * -- empty     (5 = count)
-        // 1. Shift `byt` on the number of already taken positions of `buffer`
+        // 1. Shift `byte` on the number of already taken positions of `buffer`
         //    (3 in this example).
         // Was:    11001100
         // Became: 00011001
         // 2. Write the mask to the `buffer`.
         // 3. Write out the `buffer`.
-        // 4. Write the remaining (right-remaining) part of the `byt` to the `buffer`
+        // 4. Write the remaining (right-remaining) part of the `byte` to the `buffer`
         //    (00000100 in this example)
-        buffer |= byt >> (8 - count);
+        buffer |= (byte >> (8 - count));
         write_buf();
-        buffer = byt << count;
+        buffer = byte << count;
     }
 
     // Empty the currently in-process `buffer` by filling it with 'bit'
@@ -86,10 +85,11 @@ public:
     }
 
 private:
+    void write_buf() {
+        out->write(reinterpret_cast<const char*>(&buffer), sizeof(buffer));
+    }
+
     std::ostream* out;
-    // TODO: Seems like GO implementation won't write buffer if it's empty. Research this moment.
-    //       Main misunderstanding is why do we write an empty buffer in a link of
-    //       `compress` (first time) -> `writeBits` -> `writeByte` -> write empty (full of zeroes) buffer to output.
     uint8_t buffer;
     // How many right-most bits are available for writing in the current byte (the last byte of the buffer).
     uint8_t count;

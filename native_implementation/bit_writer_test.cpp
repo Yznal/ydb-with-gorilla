@@ -15,34 +15,15 @@ void write_bit_test() {
             bw.writeBit(bit == '1');
         }
 
-        auto left = hexValues[i];
-        auto right = static_cast<uint8_t>(ss.str()[0]);
-        bool res = left == right;
-        if (!res) {
-            std::cout << "write_bit_test: Not equal on i = " << i << ". Left: " << left << ". Right: " << right << "." << std::endl;
+        auto expected = hexValues[i];
+        auto actual = static_cast<uint8_t>(ss.str()[0]);
+        if (expected != actual) {
+            std::cerr << "write_bit_test: Not equal on i = " << i << ". Left: " << expected << ". Right: " << actual << "." << std::endl;
+            return;
         }
     }
 }
 
-// Use `hexdump -C cmake-build-debug/write_output.bin`
-// to investigate binary representation of the written bits.
-int write_to_file() {
-    std::ofstream outFile("write_output.bin", std::ios::binary);
-    if (!outFile.is_open()) {
-        std::cerr << "Failed to open output file." << std::endl;
-        return 1;
-    }
-
-    BitWriter bw(outFile);
-    bw.writeBits(0x123456789ABCDEF0ULL, 32);
-    bw.flush(true);
-
-    outFile.close();
-    std::cout << "Wrote bits to the file" << std::endl;
-    return 0;
-}
-
 int main() {
-//    custom_write();
     write_bit_test();
 }
