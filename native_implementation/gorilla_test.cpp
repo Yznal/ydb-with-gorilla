@@ -1,11 +1,11 @@
+// C++ version of https://github.com/keisku/gorilla.
+//
 // For benchmarks see:
 // * https://github.com/andybbruno/TSXor/tree/master/benchmark
 // * https://github.com/burmanm/gorilla-tsc/blob/master/src/main/java/fi/iki/yak/ts/compression/gorilla/benchmark/EncodingBenchmark.java
 //
 // Online float -> binary converter:
 // https://www.h-schmidt.net/FloatConverter/IEEE754.html
-//
-// C++ version of https://github.com/keisku/gorilla.
 //
 // For ready to use C++ implementation see
 // https://github.com/andybbruno/TSXor/tree/master/benchmark/algo/core
@@ -70,6 +70,8 @@ void test_article_example() {
     uint64_t third_pair_value = 24;
     compressor.compress(third_pair_time, third_pair_value);
     compressor.finish();
+
+    // TODO: finish example.
 
     outFile.close();
     std::cout << "Wrote bits to the file" << std::endl;
@@ -177,7 +179,6 @@ void test_compress_decompress() {
         auto actual_data = actual_data_vec[i];
         if (!(expected_data == actual_data)) {
             std::cerr << "Data differ on index: " << i << ". " << expected_data << " != " << actual_data << std::endl;
-//            std::cerr << "Data differ. Expected: " << expected_data_vec.size() << ". Actual: " << actual_data_vec.size << "." <<  std::endl;
             return;
         }
     }
@@ -189,6 +190,9 @@ void test_compress_decompress() {
 //
 // Commands to investigate binary representation of the testing file:
 // * Binary: `xxd -b integration.bin`
+//
+// Note:
+// Header -- 2 hours aligned datetime.
 int main() {
     test_compress_decompress();
     return 0;
