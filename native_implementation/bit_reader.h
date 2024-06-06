@@ -43,7 +43,7 @@ public:
 
     // Read `nbits` bits from the stream.
     uint64_t readBits(int nbits) {
-        uint64_t u64;
+        uint64_t u64 = 0;
 
         while (nbits >= 8) {
             uint8_t byte = readByte();
@@ -69,8 +69,6 @@ private:
         char read_byte;
         in.read(&read_byte, 1);
         buffer_ = read_byte;
-        std::bitset<8> bit_char(read_byte);
-        std::cout << "New buffer: " << bit_char << std::endl;
     }
 
     std::istream& in;

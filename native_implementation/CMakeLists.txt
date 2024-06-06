@@ -23,8 +23,8 @@ add_executable(
 )
 
 add_executable(
-        custom_gorilla
-        main.cpp
+        gorilla_test
+        gorilla_test.cpp
         bit_writer.h
         compressor.h
         bit_reader.h

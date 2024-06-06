@@ -75,7 +75,7 @@ private:
     }
 
     uint8_t dod_timestamp_bits() {
-        uint8_t dod;
+        uint8_t dod = 0;
         for (int i = 0; i < 4; i++) {
             dod <<= 1;
             bool bit = br.readBit();
@@ -105,7 +105,7 @@ private:
     }
 
     uint64_t decompress_value() {
-        uint8_t read;
+        uint8_t read = 0;
         for (int i = 0; i < 2; i++) {
             bool bit = br.readBit();
             if (bit) {
