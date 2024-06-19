@@ -77,6 +77,45 @@ Status test_arrow() {
     return Status::OK();
 }
 
+arrow::Status custom_play() {
+    auto first_field_builder = arrow::TimestampBuilder(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO), arrow::default_memory_pool());
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(11));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(21));
+    std::shared_ptr<arrow::Array> first_data_array;
+    ARROW_ASSIGN_OR_RAISE(first_data_array, first_field_builder.Finish());
+
+    arrow::UInt64Builder second_field_builder;
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(12));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(22));
+    std::shared_ptr<arrow::Array> second_data_array;
+    ARROW_ASSIGN_OR_RAISE(second_data_array, second_field_builder.Finish());
+
+    std::shared_ptr<arrow::Field> first_field = arrow::field("First", arrow::timestamp(arrow::TimeUnit::MICRO));
+    std::shared_ptr<arrow::Field> second_field = arrow::field("Second", arrow::uint64());
+    std::shared_ptr<arrow::Schema> test_schema = arrow::schema({first_field, second_field});
+    std::shared_ptr<arrow::RecordBatch> test_rbatch = arrow::RecordBatch::Make(test_schema, 2, {first_data_array, second_data_array});
+
+
+    std::cout << *test_schema << std::endl;
+
+    arrow::Schema schema_des = *test_rbatch->schema();
+    for (int i = 0; i < schema_des.num_fields(); i++) {
+        const auto& field = schema_des.field(i);
+        auto field_type = field->type();
+
+        std::cout << "Handling field: " << i << std::endl;
+        std::cout << "Field name: " << field->name() << std::endl;
+        std::cout << "Field type: " << *field_type << std::endl;
+
+        if (field_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+            std::cout << "Faced timestamp" << std::endl;
+        }
+        std::cout << std::endl;
+    }
+
+    return arrow::Status::OK();
+}
+
 // Prerequisites:
 // Install arrow using package manager or build from source.
 // `sudo apt install -y -V libarrow-dev`
@@ -84,13 +123,16 @@ Status test_arrow() {
 // To run execute:
 // `cmake . && make arrow_gorilla_test && ./arrow_gorilla_test`
 int main() {
-    data_vec d_vec;
+    data_vec d_vec {
+        std::make_pair(69, 6969)
+    };
     column_data c_data = { d_vec, "My_column" };
-    uint64_t header = 1;
+    uint64_t header = 42;
 
-    Status st = compress_column(header, c_data);
-    if (!st.ok()) {
-        std::cerr << st << std::endl;
+    Status serialization_st = compress_column(header, c_data);
+    Status deserialization_st = decompress_column();
+    if (!serialization_st.ok() || !deserialization_st.ok()) {
+        std::cerr << serialization_st << std::endl;
         exit(1);
     }
 }
