@@ -4,6 +4,7 @@
 #include <arrow/ipc/api.h>
 
 #include <iostream>
+#include <ctime>
 
 #include "arrow_gorilla.h"
 
@@ -79,14 +80,14 @@ Status test_arrow() {
 
 arrow::Status custom_play() {
     auto first_field_builder = arrow::TimestampBuilder(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO), arrow::default_memory_pool());
-    ARROW_RETURN_NOT_OK(first_field_builder.Append(11));
-    ARROW_RETURN_NOT_OK(first_field_builder.Append(21));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(1718869317));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(1718879427));
     std::shared_ptr<arrow::Array> first_data_array;
     ARROW_ASSIGN_OR_RAISE(first_data_array, first_field_builder.Finish());
 
     arrow::UInt64Builder second_field_builder;
-    ARROW_RETURN_NOT_OK(first_field_builder.Append(12));
-    ARROW_RETURN_NOT_OK(first_field_builder.Append(22));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(69));
+    ARROW_RETURN_NOT_OK(first_field_builder.Append(6969));
     std::shared_ptr<arrow::Array> second_data_array;
     ARROW_ASSIGN_OR_RAISE(second_data_array, second_field_builder.Finish());
 
@@ -113,6 +114,15 @@ arrow::Status custom_play() {
         std::cout << std::endl;
     }
 
+    auto timestampData = test_rbatch->column_data()[0];
+    arrow::TimestampArray castedTimestampData(timestampData);
+    for (auto value : castedTimestampData) {
+        std::cout << "Time: " << *value << std::endl;
+    }
+
+    uint64_t firstTime = castedTimestampData.Value(0);
+    std::cout << "First aligned value: " << firstTime - (firstTime % (60 * 60 * 2)) << std::endl;
+
     return arrow::Status::OK();
 }
 
@@ -123,11 +133,18 @@ arrow::Status custom_play() {
 // To run execute:
 // `cmake . && make arrow_gorilla_test && ./arrow_gorilla_test`
 int main() {
+    // Want to get 1718866800
+    uint64_t time_now = 1718869317;
+    auto alligned_hours_rem = time_now % (60 * 60 * 2);
+    std::cout << "Alligned: " << time_now - alligned_hours_rem << std::endl;
+
     data_vec d_vec {
-        std::make_pair(69, 6969)
+        // 06/20/2024, 12:41:57
+        std::make_pair(1718869317, 6969)
     };
     column_data c_data = { d_vec, "My_column" };
-    uint64_t header = 42;
+    // 06/20/2024, 12:00:00
+    uint64_t header = 1718866800;
 
     Status serialization_st = compress_column(header, c_data);
     Status deserialization_st = decompress_column();

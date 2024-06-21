@@ -11,6 +11,7 @@
 
 using arrow::Status;
 
+// Pairs of { time, value }.
 using data_vec = std::vector<std::pair<uint64_t, uint64_t>>;
 
 struct column_data {
@@ -22,6 +23,12 @@ using column_vec = std::vector<column_data>;
 
 const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_test_output.csv";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_test_output.arrow";
+
+arrow::Status compress_column(const column_data& c_data) {
+    auto first_time = c_data.data[0].first;
+
+    return arrow::Status::OK();
+}
 
 arrow::Status compress_column(uint64_t header, const column_data& c_data) {
     std::cout << "SERIALIZATION   -- START." << std::endl;
