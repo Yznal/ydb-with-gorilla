@@ -11,14 +11,14 @@ add_executable(
 
 add_executable(
         bit_wr_test
-        bit_wr_test.cpp
+        test_bit_reader_writer.cpp
         bit_writer.h
         bit_reader.h
 )
 
 add_executable(
         gorilla_test
-        gorilla_test.cpp
+        test_gorilla.cpp
         bit_writer.h
         compressor.h
         bit_reader.h
@@ -33,7 +33,7 @@ message(STATUS "Arrow SO version: ${ARROW_FULL_SO_VERSION}")
 
 add_executable(
         arrow_gorilla_test
-        arrow_gorilla_test.cpp
+        test_gorilla_arrow.cpp
 )
 
 if(ARROW_LINK_SHARED)

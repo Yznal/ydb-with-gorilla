@@ -13,12 +13,11 @@
 #include <iostream>
 #include <ctime>
 #include <bitset>
-#include <sstream>
 #include <algorithm>
 #include "compressor.h"
 #include "decompressor.h"
 
-const char *OUTPUT_FILE_NAME = "main_output.bin";
+const std::string INTEGRATION_READ_WRITE_FILE_NAME = "integration.bin";
 
 std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, int sec) {
     struct tm tm{};
@@ -31,53 +30,6 @@ std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, 
     std::time_t ts = std::mktime(&tm);
     return ts;
 }
-
-void test_article_example() {
-    std::ofstream outFile(OUTPUT_FILE_NAME, std::ios::binary);
-    if (!outFile.is_open()) {
-        std::cerr << "Failed to open output file." << std::endl;
-        exit(1);
-    }
-
-    // 1427151600.
-    // 4 bytes of header.
-    //
-    // 00000000 00000000 00000000 00000000 01010101 00010000 10011010 11110000
-    uint64_t header = get_date_timestamp(2015, 3, 24, 2, 0, 0);
-    Compressor compressor(outFile, header);
-
-    // 1427151662.
-    // (first) diff = 1427151662 - 1427151600 = 62 [2 + 4 + 8 + 16 + 32].
-    // First 14 bits of diff.
-    //
-    // 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00111110
-    //                             first 14 bits:              00000001 111100
-    auto first_pair_time = get_date_timestamp(2015, 3, 24, 2, 1, 2);
-    std::cout << "First diff is:" << std::endl;
-    uint64_t first_pair_value = 12;
-    // 0100000000101000000000000000000000000000000000000000000000000000
-    std::cout << "First value is:" << std::endl;
-    compressor.compress(first_pair_time, first_pair_value);
-    return;
-
-    auto second_pair_time = get_date_timestamp(2015, 3, 24, 2, 2, 2);
-    // All 64 bits.
-    // 0000000000000000000000000000000000000000000000000000000000001100
-    uint64_t second_pair_value = 12;
-    compressor.compress(second_pair_time, second_pair_value);
-
-    auto third_pair_time = get_date_timestamp(2015, 3, 24, 2, 3, 2);
-    uint64_t third_pair_value = 24;
-    compressor.compress(third_pair_time, third_pair_value);
-    compressor.finish();
-
-    // TODO: finish example.
-
-    outFile.close();
-    std::cout << "Wrote bits to the file" << std::endl;
-}
-
-const std::string INTEGRATION_READ_WRITE_FILE_NAME = "integration.bin";
 
 struct data {
     uint64_t time;
@@ -96,9 +48,6 @@ std::ostream& operator<<(std::ostream& out, const data& d)
 void test_compress_decompress() {
     // Generate data for compression.
     uint64_t header = get_date_timestamp(2024, 0, 0, 0, 0, 0);
-    // 00000000 00000000 00000000 00000000 01100101 01100111 10100110
-    // 01010000
-    std::bitset<64> binary_header(header);
     size_t data_len = 10;
     auto expected_data_vec = std::vector<data>(data_len);
     uint64_t current_timestamp = header;
@@ -114,22 +63,6 @@ void test_compress_decompress() {
         // TODO: Change to random.
         uint64_t value = 300;
         expected_data_vec[i] = data { current_timestamp, value };
-
-        if (i == 0) {
-            uint64_t first_delta = current_timestamp - header;
-            // 00000011 001000
-            // Total:
-            // 00000000 00000000 00000000 00000000 01100101 01100111
-            // 10100110 01010000 00000011 001000
-            std::bitset<14> binary_first_delta(first_delta);
-
-            // 00 00000000 00000000 00000000 00000000 00000000 00000000 00000100 101100
-            // Total:
-            // 00000000 00000000 00000000 00000000 01100101 01100111
-            // 10100110 01010000 00000011 00100000 00000000 00000000
-            // 00000000 00000000 00000000 00000000 00000100 101100
-            std::bitset<64> binary_first_value(value);
-        }
     }
 
     // Compress data.
@@ -142,11 +75,6 @@ void test_compress_decompress() {
     for (auto data : expected_data_vec) {
         c.compress(data.time, data.value);
     }
-    // Total:
-    // 00000000 00000000 00000000 00000000 01100101 01100111
-    // 10100110 01010000 00000011 00100000 00000000 00000000
-    // 00000000 00000000 00000000 00000000 00000100 10110011
-    // 11111111 11111111 11111111 11111111 11000000
     c.finish();
     buffer_out.close();
 
@@ -190,9 +118,6 @@ void test_compress_decompress() {
 //
 // Commands to investigate binary representation of the testing file:
 // * Binary: `xxd -b integration.bin`
-//
-// Note:
-// Header -- 2 hours aligned datetime.
 int main() {
     test_compress_decompress();
     return 0;

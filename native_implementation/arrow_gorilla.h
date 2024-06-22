@@ -14,28 +14,15 @@ using arrow::Status;
 // Pairs of { time, value }.
 using data_vec = std::vector<std::pair<uint64_t, uint64_t>>;
 
-struct column_data {
-    data_vec data;
-    std::string name;
-};
-
-using column_vec = std::vector<column_data>;
-
 const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_test_output.csv";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_test_output.arrow";
 
-arrow::Status compress_column(const column_data& c_data) {
-    auto first_time = c_data.data[0].first;
-
-    return arrow::Status::OK();
-}
-
-arrow::Status compress_column(uint64_t header, const column_data& c_data) {
+arrow::Status compress_column(uint64_t header, const data_vec& data) {
     std::cout << "SERIALIZATION   -- START." << std::endl;
     std::stringstream stream;
 
     Compressor c(stream, header);
-    for (auto &[time, value] : c_data.data) {
+    for (auto &[time, value] : data) {
         c.compress(time, value);
     }
     c.finish();
@@ -68,6 +55,13 @@ arrow::Status compress_column(uint64_t header, const column_data& c_data) {
     std::cout << "SERIALIZATION   -- FINISH." << std::endl;
 
     return arrow::Status::OK();
+}
+
+arrow::Status compress_column(const data_vec& data) {
+    auto first_time = data[0].first;
+    auto header = first_time - (first_time % (60 * 60 * 2));
+
+    return compress_column(header, data);
 }
 
 Status decompress_column() {
@@ -105,19 +99,14 @@ Status decompress_column() {
 
         arrow::UInt8Array casted_array(c_data);
 
-        auto rows_count = casted_array.length();
-        std::cout << "Values count: " << rows_count << std::endl;
         for (auto value : casted_array) {
-            std::cout << "New value into the stream." << std::endl;
             in_stream << *value;
         }
 
-
-        auto actual_data_vec = std::vector<column_data>();
         Decompressor d(in_stream);
         auto d_header = d.get_header();
         std::cout << "Decompressed header: " << d_header << std::endl;
-        for (int i = 0; i < 1; i++) {
+        for (int i = 0; i < 10; i++) {
             std::pair<uint64_t, uint64_t> current_pair = d.next();
             std::cout << "Decompressed time: " << current_pair.first << std::endl;
             std::cout << "Decompressed value: " << current_pair.second << std::endl;
@@ -126,19 +115,4 @@ Status decompress_column() {
 
     std::cout << "DESERIALIZATION -- FINISH." << std::endl;
     return arrow::Status::OK();
-}
-
-// YDB data flow:
-// Columns data -> std::shared_ptr<arrow::RecordBatch> -> TString (written to disk/memory).
-arrow::Status compress_data(uint64_t header, const column_vec& c_vec) {
-    // TODO.
-    return arrow::Status::OK();
-}
-
-// YDB data flow:
-// TString (+ optional std::shared_ptr<arrow::Schema>) -> std::shared_ptr<arrow::RecordBatch> -> Column data.
-column_vec decompress_data() {
-    // TODO.
-    column_vec decompressed_data;
-    return decompressed_data;
 }
