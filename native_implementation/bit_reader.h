@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <vector>
 
-// See https://stackoverflow.com/questions/5513532/reading-binary-istream-byte-by-byte for file reading byte by byte.
 class BitReader {
 public:
     explicit BitReader(std::istream& is) : in(is), buffer_(0), count_(0) {}

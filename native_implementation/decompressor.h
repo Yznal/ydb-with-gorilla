@@ -17,9 +17,9 @@ public:
         return header_;
     }
 
-    std::pair<uint64_t, uint64_t> next() {
+    std::optional<std::pair<uint64_t, uint64_t>> next() {
         if (t_ == 0) {
-            return decompress_first();
+            return { decompress_first() };
         } else {
             return decompress();
         }
@@ -30,7 +30,7 @@ private:
         uint64_t delta_u64 = br.readBits(FIRST_DELTA_BITS);
         int64_t delta = *reinterpret_cast<int64_t*>(&delta_u64);
 
-        if (delta == (1 << (FIRST_DELTA_BITS - 1))) {
+        if (delta == ((1 << FIRST_DELTA_BITS) - 1)) {
             return std::make_pair(0, 0);
         }
 
@@ -42,14 +42,17 @@ private:
         return std::make_pair(t_, value_);
     }
 
-    std::pair<uint64_t, uint64_t> decompress() {
-        uint64_t t = decompress_timestamp();
-        uint64_t v = decompress_value();
+    std::optional<std::pair<uint64_t, uint64_t>> decompress() {
+        std::optional<uint64_t> t = decompress_timestamp();
+        if (t) {
+            uint64_t v = decompress_value();
 
-        return std::make_pair(t, v);
+            return { std::make_pair(*t, v) };
+        }
+        return std::nullopt;
     }
 
-    uint64_t decompress_timestamp() {
+    std::optional<uint64_t> decompress_timestamp() {
         uint8_t n = dod_timestamp_bits();
 
         if (n == 0) {
@@ -59,8 +62,8 @@ private:
 
         uint64_t bits = br.readBits(n);
 
-        if (n == 32 && bits == 0xFFFFFFFF) {
-            return 0;
+        if (n == 64 && bits == 0xFFFFFFFFFFFFFFFF) {
+            return std::nullopt;
         }
 
         int64_t bits_int64 = *reinterpret_cast<int64_t*>(&bits);
@@ -97,7 +100,7 @@ private:
         } else if (dod == 0x0E) {
             return 12;
         } else if (dod == 0x0F) {
-            return 32;
+            return 64;
         } else {
             std::cerr << "invalid bit header for bit length to read" << std::endl;
             exit(1);
@@ -118,13 +121,13 @@ private:
 
         if (read == 0x1 || read == 0x3) {
             if (read == 0x3) {
-                uint8_t leading_zeroes = br.readBits(5);
+                uint8_t leading_zeroes = br.readBits(6);
                 uint8_t significant_bits = br.readBits(6);
                 if (significant_bits == 0) {
                     significant_bits = 64;
                 }
                 leading_zeros_ = leading_zeroes;
-                trailing_zeros_ = 64 - significant_bits - leading_zeroes;
+                trailing_zeros_ = 64 - significant_bits - leading_zeros_;
             }
 
             uint64_t value_bits = br.readBits(64 - leading_zeros_ - trailing_zeros_);

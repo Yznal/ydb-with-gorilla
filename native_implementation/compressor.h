@@ -32,14 +32,22 @@ uint8_t trailing_zeros(uint64_t v) {
 }
 
 
+// Diff from initial article implementation:
+// 1.) Leading zeroes are encoded and decoded as 6 bits and not as 5 (as it's done in the article).
+// 2.) Max DOD encoded as 64 bits and not as 32.
 class Compressor {
 public:
-    Compressor(std::ostream& os, uint64_t header) : bw(os), header_(header), leading_zeros_(UINT8_MAX) {
+    Compressor(std::ostream& os, uint64_t header) : bw(os), header_(header), leading_zeros_(INT8_MAX) {
         bw.writeBits(header_, 64);
     }
 
     void compress(uint64_t t, uint64_t v) {
         if (t_ == 0) {
+            if (t - header_ < 0) {
+                std::cerr << "First time passed for compression is less than header." << std::endl;
+                std::cerr << "Header: " << header_ << ". Time: " << t  << "." << std::endl;
+                exit(0);
+            }
             int64_t delta = static_cast<int64_t>(t) - static_cast<int64_t>(header_);
             t_ = t;
             t_delta_ = delta;
@@ -55,7 +63,7 @@ public:
 
     void finish() {
         if (t_ == 0) {
-            bw.writeBits(1<< (FIRST_DELTA_BITS - 1), FIRST_DELTA_BITS);
+            bw.writeBits((1 << FIRST_DELTA_BITS) - 1, FIRST_DELTA_BITS);
             bw.writeBits(0, 64);
             bw.flush(false);
             return;
@@ -64,7 +72,7 @@ public:
         // 0x0F           = 00001111 -> 1111 (cutted).
         bw.writeBits(0x0F, 4);
         // 0xFFFFFFFF     = 11111111 11111111 11111111 11111111
-        bw.writeBits(0xFFFFFFFF, 32);
+        bw.writeBits(0xFFFFFFFFFFFFFFFF, 64);
         bw.writeBit(false);
         bw.flush(false);
     }
@@ -72,7 +80,7 @@ public:
 private:
     void compressTimestamp(uint64_t t) {
         auto delta = static_cast<int64_t>(t) - static_cast<int64_t>(t_);
-        int64_t dod = static_cast<int64_t>(delta) - static_cast<int64_t>(t_delta_);
+        int64_t dod = delta - t_delta_;
 
         t_ = t;
         t_delta_ = delta;
@@ -95,11 +103,11 @@ private:
     }
 
     void writeInt64Bits(int64_t i, int nbits) {
-        uint64_t u;
+        uint64_t u = 0;
         if (i >= 0 || nbits >= 64) {
             u = static_cast<uint64_t>(i);
         } else {
-            u = static_cast<uint64_t>(1 << (nbits + i));
+            u = static_cast<uint64_t>((1 << nbits) + i);
         }
         bw.writeBits(u, int(nbits));
     }
@@ -118,7 +126,7 @@ private:
 
         bw.writeBit(true);
 
-        if (leading_zeros_val <= leading_zeros_ && trailing_zeros_val <= trailing_zeros_) {
+        if (leading_zeros_ <= leading_zeros_val && trailing_zeros_ <= trailing_zeros_val) {
             bw.writeBit(false);
             int significant_bits = 64 - leading_zeros_ - trailing_zeros_;
             bw.writeBits(xor_val >> trailing_zeros_, significant_bits);
@@ -129,7 +137,7 @@ private:
         trailing_zeros_ = trailing_zeros_val;
 
         bw.writeBit(true);
-        bw.writeBits(leading_zeros_val, 5);
+        bw.writeBits(leading_zeros_, 6);
         int significant_bits = 64 - leading_zeros_ - trailing_zeros_;
         bw.writeBits(static_cast<uint64_t>(significant_bits), 6);
         bw.writeBits(xor_val >> trailing_zeros_val, significant_bits);

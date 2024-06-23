@@ -8,22 +8,46 @@
 #include <sstream>
 #include "compressor.h"
 #include "decompressor.h"
+#include "test_common.h"
 
 using arrow::Status;
 
-// Pairs of { time, value }.
-using data_vec = std::vector<std::pair<uint64_t, uint64_t>>;
+const std::string TEST_OUTPUT_FILE_NAME_BIN = "arrow_output.bin";
+const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_output.csv";
+const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_output.arrow";
+const std::string TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION = "arrow_output_no_compression.arrow";
 
-const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_test_output.csv";
-const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_test_output.arrow";
+arrow::Status serialize_data_uncompressed(const std::shared_ptr<arrow::RecordBatch>& batch) {
+    std::shared_ptr<arrow::io::FileOutputStream> outfile;
+    ARROW_ASSIGN_OR_RAISE(outfile, arrow::io::FileOutputStream::Open(TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION));
+    ARROW_ASSIGN_OR_RAISE(std::shared_ptr<arrow::ipc::RecordBatchWriter> writer,
+                          arrow::ipc::MakeFileWriter(outfile, batch->schema()));
+    ARROW_RETURN_NOT_OK(writer->WriteRecordBatch(*batch));
+    ARROW_RETURN_NOT_OK(writer->Close());
+    return arrow::Status::OK();
+}
 
-arrow::Status compress_column(uint64_t header, const data_vec& data) {
+arrow::Status serialize_data_compressed(uint64_t header, std::vector<data>& data) {
     std::cout << "SERIALIZATION   -- START." << std::endl;
-    std::stringstream stream;
 
+    std::ofstream bin_ofstream(TEST_OUTPUT_FILE_NAME_BIN, std::ios::binary);
+    if (!bin_ofstream.is_open()) {
+        std::cerr << "Failed to open integration file as test output buffer." << std::endl;
+        exit(1);
+    }
+    Compressor c_bin(bin_ofstream, header);
+    for (auto data_pair : data) {
+        std::cout << "Serializing: " << data_pair.time << " and " << data_pair.value << "." << std::endl;
+        c_bin.compress(data_pair.time, data_pair.value);
+    }
+    c_bin.finish();
+    bin_ofstream.close();
+
+
+    std::stringstream stream;
     Compressor c(stream, header);
-    for (auto &[time, value] : data) {
-        c.compress(time, value);
+    for (auto data_pair : data) {
+        c.compress(data_pair.time, data_pair.value);
     }
     c.finish();
 
@@ -57,14 +81,15 @@ arrow::Status compress_column(uint64_t header, const data_vec& data) {
     return arrow::Status::OK();
 }
 
-arrow::Status compress_column(const data_vec& data) {
-    auto first_time = data[0].first;
+arrow::Status serialize_data_compressed(std::vector<data>& data) {
+    auto first_time = data[0].time;
     auto header = first_time - (first_time % (60 * 60 * 2));
+    std::cout << "Expected header is: " << header << std::endl;
 
-    return compress_column(header, data);
+    return serialize_data_compressed(header, data);
 }
 
-Status decompress_column() {
+Status decompress_data() {
     std::cout << "DESERIALIZATION -- START." << std::endl;
     std::shared_ptr<arrow::io::ReadableFile> infile;
     ARROW_ASSIGN_OR_RAISE(infile, arrow::io::ReadableFile::Open(
@@ -75,43 +100,29 @@ Status decompress_column() {
     std::shared_ptr<arrow::RecordBatch> rbatch;
     ARROW_ASSIGN_OR_RAISE(rbatch, ipc_reader->ReadRecordBatch(0));
 
-    arrow::Schema schema_des = *rbatch->schema();
-    for (int i = 0; i < schema_des.num_fields(); i++) {
-        const auto& field = schema_des.field(i);
-        auto field_type = field->type();
-
-        std::cout << "Handling field: " << i << std::endl;
-        std::cout << "Field name: " << field->name() << std::endl;
-        std::cout << "Field type: " << *field_type << std::endl;
-
-        if (field_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
-            std::cout << "Faced timestamp" << std::endl;
-        }
-        std::cout << std::endl;
-    }
-
     auto columns_data = rbatch->column_data();
-    for (const auto& c_data : columns_data) {
-        auto column_data_type = c_data->type;
-        std::cout << "Type: " << *column_data_type << std::endl;
+    const auto& c_data = columns_data[0];
+    auto column_data_type = c_data->type;
 
-        std::stringstream in_stream;
+    std::stringstream in_stream;
 
-        arrow::UInt8Array casted_array(c_data);
+    arrow::UInt8Array casted_array(c_data);
 
-        for (auto value : casted_array) {
-            in_stream << *value;
-        }
-
-        Decompressor d(in_stream);
-        auto d_header = d.get_header();
-        std::cout << "Decompressed header: " << d_header << std::endl;
-        for (int i = 0; i < 10; i++) {
-            std::pair<uint64_t, uint64_t> current_pair = d.next();
-            std::cout << "Decompressed time: " << current_pair.first << std::endl;
-            std::cout << "Decompressed value: " << current_pair.second << std::endl;
-        }
+    for (auto value : casted_array) {
+        in_stream << *value;
     }
+
+    Decompressor d(in_stream);
+    auto d_header = d.get_header();
+    std::cout << "Decompressed header: " << d_header << std::endl;
+
+    std::optional<std::pair<uint64_t, uint64_t>> current_pair = std::nullopt;
+    do {
+        current_pair = d.next();
+        if (current_pair) {
+            std::cout << "Decompressed. Time: " << (*current_pair).first << ". Value: " << (*current_pair).second << std::endl;
+        }
+    } while (current_pair);
 
     std::cout << "DESERIALIZATION -- FINISH." << std::endl;
     return arrow::Status::OK();

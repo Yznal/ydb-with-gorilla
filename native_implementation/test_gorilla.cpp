@@ -16,63 +16,26 @@
 #include <algorithm>
 #include "compressor.h"
 #include "decompressor.h"
+#include "test_common.h"
 
 const std::string INTEGRATION_READ_WRITE_FILE_NAME = "integration.bin";
 
-std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, int sec) {
-    struct tm tm{};
-    tm.tm_year = year - 1900;
-    tm.tm_mon = month - 1;
-    tm.tm_mday = day;
-    tm.tm_hour = hour;
-    tm.tm_min = min;
-    tm.tm_sec = sec;
-    std::time_t ts = std::mktime(&tm);
-    return ts;
-}
-
-struct data {
-    uint64_t time;
-    uint64_t value;
-
-    bool operator==(const data& other) const {
-        return time == other.time && value == other.value;
-    }
-};
-
-std::ostream& operator<<(std::ostream& out, const data& d)
-{
-    return out << "([time: " << d.time << "]" << " [value: " << d.value << "]";
-}
-
 void test_compress_decompress() {
-    // Generate data for compression.
-    uint64_t header = get_date_timestamp(2024, 0, 0, 0, 0, 0);
-    size_t data_len = 10;
-    auto expected_data_vec = std::vector<data>(data_len);
-    uint64_t current_timestamp = header;
-    for (int i = 0; i < data_len; i++) {
-        if (0 < i && i % 10 == 0) {
-            // TODO: Change to random.
-            current_timestamp -= 100;
-        } else {
-            // TODO: Change to random.
-            current_timestamp += 200;
-        }
-
-        // TODO: Change to random.
-        uint64_t value = 300;
-        expected_data_vec[i] = data { current_timestamp, value };
-    }
-
     // Compress data.
     std::ofstream buffer_out(INTEGRATION_READ_WRITE_FILE_NAME, std::ios::binary);
     if (!buffer_out.is_open()) {
         std::cerr << "Failed to open integration file as output buffer." << std::endl;
         return;
     }
-    Compressor c(buffer_out, header);
-    for (auto data : expected_data_vec) {
+    auto test_data_res = get_test_data();
+    if (!test_data_res.ok()) {
+        std::cerr << "Arrow throw an error." << std::endl;
+        exit(1);
+    }
+    auto test_data = test_data_res.ValueOrDie();
+    std::cout << "Actual header is: " << test_data.data_header << std::endl;
+    Compressor c(buffer_out, test_data.data_header);
+    for (auto data : test_data.data_vec) {
         c.compress(data.time, data.value);
     }
     c.finish();
@@ -92,19 +55,20 @@ void test_compress_decompress() {
         return;
     }
 
-    for (int i = 0; i < data_len; i++) {
-        std::pair<uint64_t, uint64_t> current_pair = d.next();
-        actual_data_vec.push_back(data { current_pair.first, current_pair.second });
+    for (int i = 0; i < DEFAULT_TEST_DATA_LEN; i++) {
+        std::optional<std::pair<uint64_t, uint64_t>> current_pair = d.next();
+        actual_data_vec.push_back(data { (*current_pair).first, (*current_pair).second });
     }
 
-    if (expected_data_vec.size() != actual_data_vec.size()) {
-        std::cerr << "Data vector sizes differ. Expected: " << expected_data_vec.size() << ". Actual: " << actual_data_vec.size() << "." <<  std::endl;
+    if (test_data.data_vec.size() != actual_data_vec.size()) {
+        std::cerr << "Data vector sizes differ. Expected: " << test_data.data_vec.size() << ". Actual: " << actual_data_vec.size() << "." <<  std::endl;
         return;
     }
 
-    for (int i = 0; i < data_len; i++) {
-        auto expected_data = expected_data_vec[i];
+    for (int i = 0; i < DEFAULT_TEST_DATA_LEN; i++) {
+        auto expected_data = test_data.data_vec[i];
         auto actual_data = actual_data_vec[i];
+        std::cout << "Actual data. Time: " << actual_data.time << ". Value: " << actual_data.value << std::endl;
         if (!(expected_data == actual_data)) {
             std::cerr << "Data differ on index: " << i << ". " << expected_data << " != " << actual_data << std::endl;
             return;
@@ -117,7 +81,7 @@ void test_compress_decompress() {
 // `cmake . && make gorilla_test && ./gorilla_test`
 //
 // Commands to investigate binary representation of the testing file:
-// * Binary: `xxd -b integration.bin`
+// * Binary: `xxd -b integration.bin` (`xxd -b cmake-build-debug/integration.bin`)
 int main() {
     test_compress_decompress();
     return 0;

@@ -16,22 +16,29 @@ using arrow::Status;
 //
 // To run execute:
 // `cmake . && make arrow_gorilla_test && ./arrow_gorilla_test`
+//
+// To see binary output:
+// `xxd -b cmake-build-debug/arrow_test_output.bin`
+//
+// To see binary size:
+// `du -sh cmake-build-debug/arrow_output.arrow`
+// `du -sh cmake-build-debug/arrow_output_no_compression.arrow`
+// Average compression value is ~0.7
 int main() {
-    data_vec d_vec {
-        // 06/20/2024, 12:41:57
-        std::make_pair(1718869317, 10),
-        std::make_pair(1718879317, 20),
-        std::make_pair(1718889317, 40),
-        std::make_pair(1718899317, 30),
-    };
-
-    Status serialization_st = compress_column(d_vec);
+    auto test_data_res = get_test_data();
+    if (!test_data_res.ok()) {
+        std::cerr << "Arrow throw an error." << std::endl;
+        exit(1);
+    }
+    auto test_data = test_data_res.ValueOrDie();
+    Status serialization_no_compression_st = serialize_data_uncompressed(test_data.data_batch);
+    Status serialization_st = serialize_data_compressed(test_data.data_vec);
     if (!serialization_st.ok()) {
         std::cerr << "Serialization status: " << serialization_st << std::endl;
         exit(1);
     }
 
-    Status deserialization_st = decompress_column();
+    Status deserialization_st = decompress_data();
     if (!deserialization_st.ok()) {
         std::cerr << "Deserialization status: " << serialization_st << std::endl;
         exit(1);
