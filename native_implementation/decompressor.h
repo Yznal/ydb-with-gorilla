@@ -68,7 +68,7 @@ private:
 
         int64_t bits_int64 = *reinterpret_cast<int64_t*>(&bits);
         int64_t dod = bits_int64;
-        if (n != 32 && (1 << (n - 1)) < bits_int64) {
+        if (n != 64 && (1 << (n - 1)) < bits_int64) {
             dod = bits_int64 - (1 << n);
         }
 
