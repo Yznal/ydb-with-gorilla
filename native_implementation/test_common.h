@@ -8,6 +8,7 @@
 #include <iostream>
 #include <random>
 #include <vector>
+#include <ctime>
 
 using arrow::Status;
 
@@ -64,18 +65,19 @@ using arrow::Status;
 // 00000000 00000000 00000000 00000000 00000000 00000001
 // 11100100 01011100 11111111 11111111 11111111 11111111
 // 11111000                                              <- finish, write 0 + flush 0
+template<typename NumericT>
 struct data {
     uint64_t time;
-    uint64_t value;
+    NumericT value;
 
     bool operator==(const data &other) const {
         return time == other.time && value == other.value;
     }
-};
 
-std::ostream &operator<<(std::ostream &out, const data &d) {
-    return out << "([time: " << d.time << "]" << " [value: " << d.value << "]";
-}
+    friend std::ostream &operator<<(std::ostream &out, const data &d) {
+        return out << "([time: " << d.time << "]" << " [value: " << d.value << "]";
+    }
+};
 
 std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, int sec) {
     struct tm tm{};
@@ -90,32 +92,23 @@ std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, 
 }
 
 // Function to generate a random uint64_t within a given range
-uint64_t getRandomInRange(uint64_t minVal, uint64_t maxVal) {
+int getRandomInRange(int minVal, int maxVal) {
     std::random_device rd;
     std::mt19937_64 gen(rd());
 
-    std::uniform_int_distribution<uint64_t> dis(minVal, maxVal);
+    std::uniform_int_distribution<int> dis(minVal, maxVal);
 
     return dis(gen);
 }
 
-// Test data combining represented in two views:
-// * std C++ vec
-// * arrow RecordBatch
-struct test_data {
-    uint64_t data_header;
-    std::vector<data> data_vec;
-    std::shared_ptr<arrow::RecordBatch> data_batch;
-};
+const size_t DEFAULT_TEST_DATA_LEN = 3;
 
-const size_t DEFAULT_TEST_DATA_LEN = 5;
-
-arrow::Result<test_data> get_test_data(size_t data_len = DEFAULT_TEST_DATA_LEN) {
-    uint64_t first_timestamp = get_date_timestamp(2024, 6, 20, 6, 0, 0);
-    auto data_vec = std::vector<data>(data_len);
-    auto header = first_timestamp - (first_timestamp % (60 * 60 * 2));
+template<typename T>
+std::pair<uint64_t, std::vector<data<T>>> get_test_data_vec(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+    auto data_vec = std::vector<data<T>>(data_len);
     uint64_t current_timestamp = 0;
-    uint64_t current_value = 0;
+    uint64_t header = 0;
+    T current_value = 0;
     for (int i = 0; i < data_len; i++) {
         if (0 < i && i % 10 == 0) {
             current_timestamp -= getRandomInRange(1000, 3000);
@@ -123,33 +116,79 @@ arrow::Result<test_data> get_test_data(size_t data_len = DEFAULT_TEST_DATA_LEN) 
             current_timestamp += getRandomInRange(2000, 10000);
         }
 
+        if (i == 0) {
+            header = current_timestamp - (current_timestamp % (60 * 60 * 2));
+        }
+
         data_vec[i] = data{current_timestamp, current_value};
-        current_value += getRandomInRange(-500, 1000);
+        auto current_value_delta = getRandomInRange(-500, 1000);
+        if (current_value_delta < 0 && std::abs(current_value_delta) > current_value) {
+            current_value = 0;
+        } else {
+            current_value += current_value_delta;
+            if (std::is_same_v<T, double>) {
+                current_value += 0.34567;
+            }
+        }
     }
 
+    return std::make_pair(header, data_vec);
+}
+
+const std::string TEST_BATCH_COLUMN_NAME_TIME = "Time";
+const std::string TEST_BATCH_COLUMN_NAME_VALUE = "Value";
+
+template<typename T>
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch(const std::vector<data<T>>& data_vec) {
     auto timeColumnBuilder = arrow::TimestampBuilder(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO),
                                                      arrow::default_memory_pool());
-    arrow::UInt8Builder valueColumnBuilder;
-    for (const auto &c_data: data_vec) {
-        ARROW_RETURN_NOT_OK(timeColumnBuilder.Append(c_data.time));
-        ARROW_RETURN_NOT_OK(valueColumnBuilder.Append(c_data.value));
+    std::shared_ptr<arrow::ArrayBuilder> valueColumnBuilder;
+    if (std::is_same_v<T, uint64_t>) {
+        valueColumnBuilder = std::make_shared<arrow::UInt64Builder>();
+    } else if (std::is_same_v<T, uint32_t>) {
+        valueColumnBuilder = std::make_shared<arrow::UInt32Builder>();
+    } else if (std::is_same_v<T, double>) {
+        valueColumnBuilder = std::make_shared<arrow::DoubleBuilder>();
+    } else {
+        std::cerr << "Unknown value column type to create batch." << std::endl;
+        exit(1);
+    }
+    for (const auto &data: data_vec) {
+        ARROW_RETURN_NOT_OK(timeColumnBuilder.Append(data.time));
+
+        if (std::is_same_v<T, uint64_t>) {
+            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::UInt64Builder>(valueColumnBuilder)->Append(data.value));
+        } else if (std::is_same_v<T, uint32_t>) {
+            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::UInt32Builder>(valueColumnBuilder)->Append(data.value));
+        } else if (std::is_same_v<T, double>) {
+            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::DoubleBuilder>(valueColumnBuilder)->Append(data.value));
+        } else {
+            std::cerr << "Unknown value column type met to append." << std::endl;
+            exit(1);
+        }
     }
     std::shared_ptr<arrow::Array> timeColumnArray;
     ARROW_ASSIGN_OR_RAISE(timeColumnArray, timeColumnBuilder.Finish());
     std::shared_ptr<arrow::Array> valueColumnArray;
-    ARROW_ASSIGN_OR_RAISE(valueColumnArray, valueColumnBuilder.Finish());
+    ARROW_ASSIGN_OR_RAISE(valueColumnArray, valueColumnBuilder->Finish());
 
-    std::shared_ptr<arrow::Field> fieldTime = arrow::field("Time", arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO));
-    std::shared_ptr<arrow::Field> fieldValue = arrow::field("Value", arrow::uint8());
+    std::shared_ptr<arrow::Field> fieldTime = arrow::field(TEST_BATCH_COLUMN_NAME_TIME, arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO));
+    std::shared_ptr<arrow::Field> fieldValue;
+    if (std::is_same_v<T, uint64_t>) {
+        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, arrow::uint64());
+    } else if (std::is_same_v<T, uint32_t>) {
+        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, arrow::uint32());
+    } else if (std::is_same_v<T, double>) {
+        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, std::make_shared<arrow::DoubleType>());
+    } else {
+        std::cerr << "Unknown value column type met to create column field." << std::endl;
+        exit(1);
+    }
+
+
     std::shared_ptr<arrow::Schema> no_compression_schema = arrow::schema({fieldTime, fieldValue});
-    std::shared_ptr<arrow::RecordBatch> no_compression_batch = arrow::RecordBatch::Make(no_compression_schema, 2,
-                                                                                        {timeColumnArray,
-                                                                                         valueColumnArray});
+    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(no_compression_schema, 2,
+                                                                         {timeColumnArray, valueColumnArray});
 
-    test_data res = test_data{
-            header,
-            data_vec,
-            no_compression_batch
-    };
-    return {res};
+    return {batch};
 }

@@ -17,7 +17,7 @@ const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_output.csv";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_output.arrow";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION = "arrow_output_no_compression.arrow";
 
-arrow::Status serialize_data_uncompressed(const std::shared_ptr<arrow::RecordBatch>& batch) {
+arrow::Status serialize_data_uncompressed_batch(const std::shared_ptr<arrow::RecordBatch>& batch) {
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
     ARROW_ASSIGN_OR_RAISE(outfile, arrow::io::FileOutputStream::Open(TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION));
     ARROW_ASSIGN_OR_RAISE(std::shared_ptr<arrow::ipc::RecordBatchWriter> writer,
@@ -27,9 +27,7 @@ arrow::Status serialize_data_uncompressed(const std::shared_ptr<arrow::RecordBat
     return arrow::Status::OK();
 }
 
-arrow::Status serialize_data_compressed(uint64_t header, std::vector<data>& data) {
-    std::cout << "SERIALIZATION   -- START." << std::endl;
-
+void serialize_data_compressed(uint64_t header, std::vector<data<uint64_t>>& data) {
     std::ofstream bin_ofstream(TEST_OUTPUT_FILE_NAME_BIN, std::ios::binary);
     if (!bin_ofstream.is_open()) {
         std::cerr << "Failed to open integration file as test output buffer." << std::endl;
@@ -37,13 +35,20 @@ arrow::Status serialize_data_compressed(uint64_t header, std::vector<data>& data
     }
     Compressor c_bin(bin_ofstream, header);
     for (auto data_pair : data) {
-        std::cout << "Serializing: " << data_pair.time << " and " << data_pair.value << "." << std::endl;
         c_bin.compress(data_pair.time, data_pair.value);
     }
     c_bin.finish();
     bin_ofstream.close();
+}
 
+void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
+    auto first_time = data[0].time;
+    auto header = first_time - (first_time % (60 * 60 * 2));
 
+    return serialize_data_compressed(header, data);
+}
+
+arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<data<uint64_t>>& data) {
     std::stringstream stream;
     Compressor c(stream, header);
     for (auto data_pair : data) {
@@ -76,21 +81,17 @@ arrow::Status serialize_data_compressed(uint64_t header, std::vector<data>& data
     ARROW_RETURN_NOT_OK(csv_writer->WriteRecordBatch(*rbatch));
     ARROW_RETURN_NOT_OK(csv_writer->Close());
 
-    std::cout << "SERIALIZATION   -- FINISH." << std::endl;
-
     return arrow::Status::OK();
 }
 
-arrow::Status serialize_data_compressed(std::vector<data>& data) {
+arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& data) {
     auto first_time = data[0].time;
     auto header = first_time - (first_time % (60 * 60 * 2));
-    std::cout << "Expected header is: " << header << std::endl;
 
-    return serialize_data_compressed(header, data);
+    return serialize_data_compressed_to_batch(header, data);
 }
 
-Status decompress_data() {
-    std::cout << "DESERIALIZATION -- START." << std::endl;
+arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch() {
     std::shared_ptr<arrow::io::ReadableFile> infile;
     ARROW_ASSIGN_OR_RAISE(infile, arrow::io::ReadableFile::Open(
             TEST_OUTPUT_FILE_NAME_ARROW, arrow::default_memory_pool()));
@@ -114,16 +115,15 @@ Status decompress_data() {
 
     Decompressor d(in_stream);
     auto d_header = d.get_header();
-    std::cout << "Decompressed header: " << d_header << std::endl;
 
+    std::vector<std::pair<uint64_t, uint64_t>> data_res;
     std::optional<std::pair<uint64_t, uint64_t>> current_pair = std::nullopt;
     do {
         current_pair = d.next();
         if (current_pair) {
-            std::cout << "Decompressed. Time: " << (*current_pair).first << ". Value: " << (*current_pair).second << std::endl;
+            data_res.push_back(*current_pair);
         }
     } while (current_pair);
 
-    std::cout << "DESERIALIZATION -- FINISH." << std::endl;
-    return arrow::Status::OK();
+    return { data_res };
 }

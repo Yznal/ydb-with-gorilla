@@ -27,15 +27,12 @@ void test_compress_decompress() {
         std::cerr << "Failed to open integration file as output buffer." << std::endl;
         return;
     }
-    auto test_data_res = get_test_data();
-    if (!test_data_res.ok()) {
-        std::cerr << "Arrow throw an error." << std::endl;
-        exit(1);
-    }
-    auto test_data = test_data_res.ValueOrDie();
-    std::cout << "Actual header is: " << test_data.data_header << std::endl;
-    Compressor c(buffer_out, test_data.data_header);
-    for (auto data : test_data.data_vec) {
+    auto test_data = get_test_data_vec();
+    auto header = test_data.first;
+    auto data_vec = test_data.second;
+    std::cout << "Actual header is: " << header << std::endl;
+    Compressor c(buffer_out, header);
+    for (auto data : data_vec) {
         c.compress(data.time, data.value);
     }
     c.finish();
@@ -60,13 +57,13 @@ void test_compress_decompress() {
         actual_data_vec.push_back(data { (*current_pair).first, (*current_pair).second });
     }
 
-    if (test_data.data_vec.size() != actual_data_vec.size()) {
-        std::cerr << "Data vector sizes differ. Expected: " << test_data.data_vec.size() << ". Actual: " << actual_data_vec.size() << "." <<  std::endl;
+    if (data_vec.size() != actual_data_vec.size()) {
+        std::cerr << "Data vector sizes differ. Expected: " << data_vec.size() << ". Actual: " << actual_data_vec.size() << "." <<  std::endl;
         return;
     }
 
     for (int i = 0; i < DEFAULT_TEST_DATA_LEN; i++) {
-        auto expected_data = test_data.data_vec[i];
+        auto expected_data = data_vec[i];
         auto actual_data = actual_data_vec[i];
         std::cout << "Actual data. Time: " << actual_data.time << ". Value: " << actual_data.value << std::endl;
         if (!(expected_data == actual_data)) {
