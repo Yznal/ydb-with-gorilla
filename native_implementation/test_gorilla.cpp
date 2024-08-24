@@ -30,7 +30,8 @@ void test_compress_decompress_pairs() {
     auto header = test_data.first;
     auto data_vec = test_data.second;
     std::cout << "Actual header is: " << header << std::endl;
-    PairsCompressor c(buffer_out, header);
+    auto bw = BitWriter(buffer_out);
+    PairsCompressor c(bw, header);
     for (auto data : data_vec) {
         c.compress(std::make_pair(data.time, data.value));
     }
@@ -44,7 +45,8 @@ void test_compress_decompress_pairs() {
         return;
     }
     auto actual_data_vec = std::vector<data<uint64_t>>();
-    PairsDecompressor d(buffer_in);
+    auto br = BitReader(buffer_in);
+    PairsDecompressor d(br);
     auto d_header = d.getHeader();
     if (d_header != header) {
         std::cerr << "Headers differ. Expected: " << header << ". Actual: " << d_header << "." <<  std::endl;

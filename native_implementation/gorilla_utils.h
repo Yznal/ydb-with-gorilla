@@ -32,7 +32,8 @@ void serialize_data_compressed(uint64_t header, std::vector<data<uint64_t>>& dat
         std::cerr << "Failed to open integration file as test output buffer." << std::endl;
         exit(1);
     }
-    PairsCompressor c_bin(bin_ofstream, header);
+    auto br = BitWriter(bin_ofstream);
+    PairsCompressor c_bin(br, header);
     for (auto data_pair : data) {
         c_bin.compress(std::make_pair(data_pair.time, data_pair.value));
     }
@@ -49,7 +50,8 @@ void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
 
 arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<data<uint64_t>>& data) {
     std::stringstream stream;
-    PairsCompressor c(stream, header);
+    auto bw = BitWriter(stream);
+    PairsCompressor c(bw, header);
     for (auto data_pair : data) {
         c.compress(std::make_pair(data_pair.time, data_pair.value));
     }
@@ -112,7 +114,8 @@ arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch(
         in_stream << *value;
     }
 
-    PairsDecompressor d(in_stream);
+    auto br = BitReader(in_stream);
+    PairsDecompressor d(br);
     auto d_header = d.getHeader();
 
     std::vector<std::pair<uint64_t, uint64_t>> data_res;

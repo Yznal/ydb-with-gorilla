@@ -87,7 +87,8 @@ arrow::Result<std::string> serializeForUnknownSchemaTimestampsOnly(
     auto schemaSerializedBuffer = arrow::ipc::SerializeSchema(*batch->schema()).ValueOrDie();
     auto schemaSerializedStr = schemaSerializedBuffer->ToString();
 
-    TimestampsCompressor c(outStream, header);
+    auto bw = BitWriter(outStream);
+    TimestampsCompressor c(bw, header);
     for (int i = 0; i < arraysSize; i++) {
         c.compress(castedTimestampData.Value(i));
     }
@@ -110,7 +111,8 @@ arrow::Result<std::string> serializeForUnknownSchema(const std::shared_ptr<arrow
     auto schemaSerializedBuffer = arrow::ipc::SerializeSchema(*batch->schema()).ValueOrDie();
     auto schemaSerializedStr = schemaSerializedBuffer->ToString();
 
-    PairsCompressor c(outStream, header);
+    auto bw = BitWriter(outStream);
+    PairsCompressor c(bw, header);
     for (int i = 0; i < arraysSize; i++) {
         uint64_t reinterpretedValue = getU64FromValuesData(valueColumnType, valuesData, i);
         c.compress(std::make_pair(castedTimestampData.Value(i), reinterpretedValue));
@@ -143,7 +145,8 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> deserializeForUnknownSchema(c
     std::shared_ptr<int> a = std::make_shared<int>(1);
     std::shared_ptr<arrow::ArrayBuilder> valueColumnBuilder = getColumnBuilder(valueColumnType);
 
-    PairsDecompressor d(in_stream);
+    auto br = BitReader(in_stream);
+    PairsDecompressor d(br);
     std::optional<std::pair<uint64_t, uint64_t>> current_pair = std::nullopt;
     int rows_counter = 0;
     do {
@@ -248,11 +251,11 @@ void test_compress_decompress_pairs() {
 
     auto expected_data_vec_size = data_vec.size();
     auto actual_data_vec_size = data_vec_des.size();
-//    if (expected_data_vec_size != actual_data_vec_size) {
-//        std::cerr << "Deserialized less rows. Expected: " << expected_data_vec_size << ", got: " << actual_data_vec_size << "." << std::endl;
-//
-//        exit(1);
-//    }
+    if (expected_data_vec_size != actual_data_vec_size) {
+        std::cerr << "Deserialized less rows. Expected: " << expected_data_vec_size << ", got: " << actual_data_vec_size << "." << std::endl;
+
+        exit(1);
+    }
 
     for (int i = 0; i < data_vec.size(); i++) {
         auto [expected_time, expected_value] = data_vec[i];

@@ -101,7 +101,7 @@ int getRandomInRange(int minVal, int maxVal) {
     return dis(gen);
 }
 
-const size_t DEFAULT_TEST_DATA_LEN = 1;
+const size_t DEFAULT_TEST_DATA_LEN = 100;
 
 std::pair<uint64_t, std::vector<uint64_t>> get_test_data_vec_ts(size_t data_len = DEFAULT_TEST_DATA_LEN) {
     auto data_vec_ts = std::vector<uint64_t>(data_len);

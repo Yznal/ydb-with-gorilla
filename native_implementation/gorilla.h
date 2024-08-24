@@ -141,7 +141,7 @@ uint64_t getHeaderFromTimestamp(uint64_t first_time) {
 template<typename T>
 class CompressorBase {
 public:
-    explicit CompressorBase(std::ostream &os) : bw_(os), first_compressed_(false) {}
+    explicit CompressorBase(BitWriter& bw) : bw_(bw), first_compressed_(false) {}
 
     virtual void compressFirst(T) = 0;
 
@@ -158,13 +158,13 @@ public:
     virtual void finish() = 0;
 
 protected:
-    BitWriter bw_;
+    BitWriter &bw_;
     bool first_compressed_;
 };
 
 class TimestampsCompressor : public CompressorBase<uint64_t> {
 public:
-    TimestampsCompressor(std::ostream &os, uint64_t header) : CompressorBase(os),
+    TimestampsCompressor(BitWriter& bw, uint64_t header) : CompressorBase(bw),
                                                                                  header_(header) {
         bw_.writeBits(header_, 64);
     }
@@ -244,7 +244,7 @@ private:
 
 class ValuesCompressor : public CompressorBase<uint64_t> {
 public:
-    explicit ValuesCompressor(std::ostream &os) : CompressorBase(os), leading_zeros_(INT8_MAX) {}
+    explicit ValuesCompressor(BitWriter& bw) : CompressorBase(bw), leading_zeros_(INT8_MAX) {}
 
     void compressFirst(uint64_t v) override {
         value_ = v;
@@ -312,7 +312,7 @@ private:
 // 3.) Unable to decompress 0xFFFFFFFFFFFFFFFF as value as currently it's reserved as a flag of series end.
 class PairsCompressor : public CompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    PairsCompressor(std::ostream &os, uint64_t header) : CompressorBase(os), compressor_ts_(os, header), compressor_value_(os) {}
+    PairsCompressor(BitWriter& bw, uint64_t header) : CompressorBase(bw), compressor_ts_(bw, header), compressor_value_(bw) {}
 
     void compressFirst(std::pair<uint64_t, uint64_t> entity) override {
         auto [t, v] = entity;
@@ -414,7 +414,7 @@ private:
 template<typename T>
 class DecompressorBase {
 public:
-    explicit DecompressorBase(std::istream &is) : br_(is), first_decompressed_(false) {}
+    explicit DecompressorBase(BitReader& bw) : br_(bw), first_decompressed_(false) {}
 
     std::optional<T> next() {
         if (first_decompressed_) {
@@ -430,13 +430,13 @@ private:
     virtual std::optional<T> decompressNonFirst() = 0;
 
 protected:
-    BitReader br_;
+    BitReader &br_;
     bool first_decompressed_ = true;
 };
 
 class TimestampsDecompressor : public DecompressorBase<uint64_t > {
 public:
-    explicit TimestampsDecompressor(std::istream &is) : DecompressorBase(is) {
+    explicit TimestampsDecompressor(BitReader& br) : DecompressorBase(br) {
         header_ = br_.readBits(64);
     }
 
@@ -521,7 +521,7 @@ private:
 
 class ValuesDecompressor : public DecompressorBase<uint64_t> {
 public:
-    explicit ValuesDecompressor(std::istream &is) : DecompressorBase(is) {}
+    explicit ValuesDecompressor(BitReader& br) : DecompressorBase(br) {}
 
     std::optional<uint64_t> decompressFirst() override {
         uint64_t value = br_.readBits(64);
@@ -578,7 +578,7 @@ private:
 
 class PairsDecompressor : public DecompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    explicit PairsDecompressor(std::istream &is) : DecompressorBase(is), decompressor_ts_(is), decompressor_value_(is) {}
+    explicit PairsDecompressor(BitReader& br) : DecompressorBase(br), decompressor_ts_(br), decompressor_value_(br) {}
 
     [[nodiscard]] uint64_t getHeader() const {
         return decompressor_ts_.getHeader();
