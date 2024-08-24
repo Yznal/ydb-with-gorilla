@@ -101,14 +101,12 @@ int getRandomInRange(int minVal, int maxVal) {
     return dis(gen);
 }
 
-const size_t DEFAULT_TEST_DATA_LEN = 3;
+const size_t DEFAULT_TEST_DATA_LEN = 1;
 
-template<typename T>
-std::pair<uint64_t, std::vector<data<T>>> get_test_data_vec(size_t data_len = DEFAULT_TEST_DATA_LEN) {
-    auto data_vec = std::vector<data<T>>(data_len);
+std::pair<uint64_t, std::vector<uint64_t>> get_test_data_vec_ts(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+    auto data_vec_ts = std::vector<uint64_t>(data_len);
     uint64_t current_timestamp = 0;
     uint64_t header = 0;
-    T current_value = 0;
     for (int i = 0; i < data_len; i++) {
         if (0 < i && i % 10 == 0) {
             current_timestamp -= getRandomInRange(1000, 3000);
@@ -120,7 +118,18 @@ std::pair<uint64_t, std::vector<data<T>>> get_test_data_vec(size_t data_len = DE
             header = current_timestamp - (current_timestamp % (60 * 60 * 2));
         }
 
-        data_vec[i] = data{current_timestamp, current_value};
+        data_vec_ts[i] = current_timestamp;
+    }
+
+    return std::make_pair(header, data_vec_ts);
+}
+
+template<typename T>
+std::vector<T> get_test_data_vec_values(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+    auto data_vec_values = std::vector<T>(data_len);
+    T current_value = 0;
+    for (int i = 0; i < data_len; i++) {
+        data_vec_values[i] = current_value;
         auto current_value_delta = getRandomInRange(-500, 1000);
         if (current_value_delta < 0 && std::abs(current_value_delta) > current_value) {
             current_value = 0;
@@ -130,6 +139,19 @@ std::pair<uint64_t, std::vector<data<T>>> get_test_data_vec(size_t data_len = DE
                 current_value += 0.34567;
             }
         }
+    }
+
+    return data_vec_values;
+}
+
+template<typename T>
+std::pair<uint64_t, std::vector<data<T>>> get_test_data_vec(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+    auto [header, data_vec_ts] = get_test_data_vec_ts(data_len);
+    auto data_vec_values = get_test_data_vec_values<T>(data_len);
+
+    auto data_vec = std::vector<data<T>>(data_len);
+    for (int i = 0; i < data_len; i++) {
+        data_vec[i] = data { data_vec_ts[i], data_vec_values[i] };
     }
 
     return std::make_pair(header, data_vec);

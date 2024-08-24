@@ -8,12 +8,12 @@
 
 class BitReader {
 public:
-    explicit BitReader(std::istream& is) : in(is), buffer_(0), count_(0) {}
+    explicit BitReader(std::istream &is) : in(is), buffer_(0), count_(0) {}
 
     // Read single bit from the stream.
     bool readBit() {
         if (count_ == 0) {
-            refresh_buffer();
+            refreshBuffer();
             count_ = 8;
         }
         count_--;
@@ -30,11 +30,11 @@ public:
     // Read single byte from the stream.
     uint8_t readByte() {
         if (count_ == 0) {
-            refresh_buffer();
+            refreshBuffer();
             return buffer_;
         }
         uint8_t byte = buffer_;
-        refresh_buffer();
+        refreshBuffer();
         byte |= (buffer_ >> count_);
         buffer_ <<= (8 - count_);
         return byte;
@@ -64,13 +64,13 @@ public:
 
 private:
     // Read a new byte from the stream.
-    void refresh_buffer() {
+    void refreshBuffer() {
         char read_byte;
         in.read(&read_byte, 1);
         buffer_ = read_byte;
     }
 
-    std::istream& in;
+    std::istream &in;
     uint8_t buffer_;
     // How many right-most bits are available for reading in the current byte.
     // Note: reading is applied from left to right.

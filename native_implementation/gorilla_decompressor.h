@@ -5,30 +5,30 @@
 #include <cstdint>
 #include <stdexcept>
 #include <cmath>
-#include "bit_reader.h"
+#include "gorilla_bit_reader.h"
 
 class Decompressor {
 public:
-    explicit Decompressor(std::istream& is) : br(is) {
+    explicit Decompressor(std::istream &is) : br(is) {
         header_ = br.readBits(64);
     }
 
-    [[nodiscard]] uint64_t get_header() const {
+    [[nodiscard]] uint64_t getHeader() const {
         return header_;
     }
 
     std::optional<std::pair<uint64_t, uint64_t>> next() {
         if (t_ == 0) {
-            return { decompress_first() };
+            return {decompressFirst()};
         } else {
             return decompress();
         }
     }
 
 private:
-    [[nodiscard]] std::pair<uint64_t, uint64_t> decompress_first() {
+    [[nodiscard]] std::pair<uint64_t, uint64_t> decompressFirst() {
         uint64_t delta_u64 = br.readBits(FIRST_DELTA_BITS);
-        int64_t delta = *reinterpret_cast<int64_t*>(&delta_u64);
+        int64_t delta = *reinterpret_cast<int64_t *>(&delta_u64);
 
         if (delta == ((1 << FIRST_DELTA_BITS) - 1)) {
             return std::make_pair(0, 0);
@@ -43,17 +43,17 @@ private:
     }
 
     std::optional<std::pair<uint64_t, uint64_t>> decompress() {
-        std::optional<uint64_t> t = decompress_timestamp();
+        std::optional<uint64_t> t = decompressTimestamp();
         if (t) {
-            uint64_t v = decompress_value();
+            uint64_t v = decompressValue();
 
-            return { std::make_pair(*t, v) };
+            return {std::make_pair(*t, v)};
         }
         return std::nullopt;
     }
 
-    std::optional<uint64_t> decompress_timestamp() {
-        uint8_t n = dod_timestamp_bits();
+    std::optional<uint64_t> decompressTimestamp() {
+        uint8_t n = dodTimestampBits();
 
         if (n == 0) {
             t_ += t_delta_;
@@ -66,7 +66,7 @@ private:
             return std::nullopt;
         }
 
-        int64_t bits_int64 = *reinterpret_cast<int64_t*>(&bits);
+        int64_t bits_int64 = *reinterpret_cast<int64_t *>(&bits);
         int64_t dod = bits_int64;
         if (n != 64 && (1 << (n - 1)) < bits_int64) {
             dod = bits_int64 - (1 << n);
@@ -77,7 +77,7 @@ private:
         return t_;
     }
 
-    uint8_t dod_timestamp_bits() {
+    uint8_t dodTimestampBits() {
         uint8_t dod = 0;
         for (int i = 0; i < 4; i++) {
             dod <<= 1;
@@ -107,7 +107,7 @@ private:
         }
     }
 
-    uint64_t decompress_value() {
+    uint64_t decompressValue() {
         uint8_t read = 0;
         for (int i = 0; i < 2; i++) {
             bool bit = br.readBit();

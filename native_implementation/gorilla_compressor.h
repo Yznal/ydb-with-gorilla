@@ -7,11 +7,11 @@
 #include <stdexcept>
 #include <vector>
 #include <bit>
-#include "bit_writer.h"
+#include "gorilla_bit_writer.h"
 
 constexpr int32_t FIRST_DELTA_BITS = 14;
 
-uint8_t leading_zeros(uint64_t v) {
+uint8_t leadingZeros(uint64_t v) {
     uint64_t mask = 0x8000000000000000;
     uint8_t ret = 0;
     while (ret < 64 && (v & mask) == 0) {
@@ -21,7 +21,7 @@ uint8_t leading_zeros(uint64_t v) {
     return ret;
 }
 
-uint8_t trailing_zeros(uint64_t v) {
+uint8_t trailingZeros(uint64_t v) {
     uint64_t mask = 0x0000000000000001;
     uint8_t ret = 0;
     while (ret < 64 && (v & mask) == 0) {
@@ -31,13 +31,12 @@ uint8_t trailing_zeros(uint64_t v) {
     return ret;
 }
 
-
 // Diff from initial article implementation:
 // 1.) Leading zeroes are encoded and decoded as 6 bits and not as 5 (as it's done in the article).
 // 2.) Max DOD encoded as 64 bits and not as 32.
 class Compressor {
 public:
-    Compressor(std::ostream& os, uint64_t header) : bw(os), header_(header), leading_zeros_(INT8_MAX) {
+    Compressor(std::ostream &os, uint64_t header) : bw(os), header_(header), leading_zeros_(INT8_MAX) {
         bw.writeBits(header_, 64);
     }
 
@@ -45,7 +44,7 @@ public:
         if (t_ == 0) {
             if (t - header_ < 0) {
                 std::cerr << "First time passed for compression is less than header." << std::endl;
-                std::cerr << "Header: " << header_ << ". Time: " << t  << "." << std::endl;
+                std::cerr << "Header: " << header_ << ". Time: " << t << "." << std::endl;
                 exit(0);
             }
             int64_t delta = static_cast<int64_t>(t) - static_cast<int64_t>(header_);
@@ -121,8 +120,8 @@ private:
             return;
         }
 
-        uint8_t leading_zeros_val = leading_zeros(xor_val);
-        uint8_t trailing_zeros_val = trailing_zeros(xor_val);
+        uint8_t leading_zeros_val = leadingZeros(xor_val);
+        uint8_t trailing_zeros_val = trailingZeros(xor_val);
 
         bw.writeBit(true);
 

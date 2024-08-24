@@ -6,7 +6,7 @@
 
 class BitWriter {
 public:
-    explicit BitWriter(std::ostream& os) : out(&os), buffer(0), count(8) {}
+    explicit BitWriter(std::ostream &os) : out(&os), buffer(0), count(8) {}
 
     // Write a single bit at the available right-most position of the `buffer`.
     void writeBit(bool bit) {
@@ -23,7 +23,7 @@ public:
 
         // If `buffer` is filled, write it out and reinitialize.
         if (count == 0) {
-            write_buf();
+            writeBuf();
             buffer = 0;
             count = 8;
         }
@@ -71,7 +71,7 @@ public:
         // 4. Write the remaining (right-remaining) part of the `byte` to the `buffer`
         //    (00000100 in this example)
         buffer |= (byte >> (8 - count));
-        write_buf();
+        writeBuf();
         buffer = byte << count;
     }
 
@@ -85,11 +85,11 @@ public:
     }
 
 private:
-    void write_buf() {
-        out->write(reinterpret_cast<const char*>(&buffer), sizeof(buffer));
+    void writeBuf() {
+        out->write(reinterpret_cast<const char *>(&buffer), sizeof(buffer));
     }
 
-    std::ostream* out;
+    std::ostream *out;
     uint8_t buffer;
     // How many right-most bits are available for writing in the current byte (the last byte of the buffer).
     uint8_t count;

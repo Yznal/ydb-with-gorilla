@@ -14,26 +14,25 @@
 #include <ctime>
 #include <bitset>
 #include <algorithm>
-#include "compressor.h"
-#include "decompressor.h"
+#include "gorilla.h"
 #include "test_common.h"
 
 const std::string INTEGRATION_READ_WRITE_FILE_NAME = "integration.bin";
 
-void test_compress_decompress() {
+void test_compress_decompress_pairs() {
     // Compress data.
     std::ofstream buffer_out(INTEGRATION_READ_WRITE_FILE_NAME, std::ios::binary);
     if (!buffer_out.is_open()) {
         std::cerr << "Failed to open integration file as output buffer." << std::endl;
         return;
     }
-    auto test_data = get_test_data_vec();
+    auto test_data = get_test_data_vec<uint64_t>();
     auto header = test_data.first;
     auto data_vec = test_data.second;
     std::cout << "Actual header is: " << header << std::endl;
-    Compressor c(buffer_out, header);
+    PairsCompressor c(buffer_out, header);
     for (auto data : data_vec) {
-        c.compress(data.time, data.value);
+        c.compress(std::make_pair(data.time, data.value));
     }
     c.finish();
     buffer_out.close();
@@ -44,9 +43,9 @@ void test_compress_decompress() {
         std::cerr << "Failed to open integration file as input buffer." << std::endl;
         return;
     }
-    auto actual_data_vec = std::vector<data>();
-    Decompressor d(buffer_in);
-    auto d_header = d.get_header();
+    auto actual_data_vec = std::vector<data<uint64_t>>();
+    PairsDecompressor d(buffer_in);
+    auto d_header = d.getHeader();
     if (d_header != header) {
         std::cerr << "Headers differ. Expected: " << header << ". Actual: " << d_header << "." <<  std::endl;
         return;
@@ -80,6 +79,6 @@ void test_compress_decompress() {
 // Commands to investigate binary representation of the testing file:
 // * Binary: `xxd -b integration.bin` (`xxd -b cmake-build-debug/integration.bin`)
 int main() {
-    test_compress_decompress();
+    test_compress_decompress_pairs();
     return 0;
 }

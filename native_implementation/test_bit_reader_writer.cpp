@@ -1,6 +1,5 @@
 #include <sstream>
-#include "bit_writer.h"
-#include "bit_reader.h"
+#include "gorilla.h"
 
 const std::string CUSTOM_READ_WRITE_FILE_NAME = "write_read.bin";
 

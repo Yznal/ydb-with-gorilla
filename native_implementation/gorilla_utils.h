@@ -6,8 +6,7 @@
 #include <arrow/ipc/api.h>
 
 #include <sstream>
-#include "compressor.h"
-#include "decompressor.h"
+#include "gorilla.h"
 #include "test_common.h"
 
 using arrow::Status;
@@ -33,9 +32,9 @@ void serialize_data_compressed(uint64_t header, std::vector<data<uint64_t>>& dat
         std::cerr << "Failed to open integration file as test output buffer." << std::endl;
         exit(1);
     }
-    Compressor c_bin(bin_ofstream, header);
+    PairsCompressor c_bin(bin_ofstream, header);
     for (auto data_pair : data) {
-        c_bin.compress(data_pair.time, data_pair.value);
+        c_bin.compress(std::make_pair(data_pair.time, data_pair.value));
     }
     c_bin.finish();
     bin_ofstream.close();
@@ -50,9 +49,9 @@ void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
 
 arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<data<uint64_t>>& data) {
     std::stringstream stream;
-    Compressor c(stream, header);
+    PairsCompressor c(stream, header);
     for (auto data_pair : data) {
-        c.compress(data_pair.time, data_pair.value);
+        c.compress(std::make_pair(data_pair.time, data_pair.value));
     }
     c.finish();
 
@@ -86,7 +85,7 @@ arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<da
 
 arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& data) {
     auto first_time = data[0].time;
-    auto header = first_time - (first_time % (60 * 60 * 2));
+    auto header = getHeaderFromTimestamp(first_time);
 
     return serialize_data_compressed_to_batch(header, data);
 }
@@ -113,8 +112,8 @@ arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch(
         in_stream << *value;
     }
 
-    Decompressor d(in_stream);
-    auto d_header = d.get_header();
+    PairsDecompressor d(in_stream);
+    auto d_header = d.getHeader();
 
     std::vector<std::pair<uint64_t, uint64_t>> data_res;
     std::optional<std::pair<uint64_t, uint64_t>> current_pair = std::nullopt;
