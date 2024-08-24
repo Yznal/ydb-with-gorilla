@@ -26,14 +26,14 @@ arrow::Status serialize_data_uncompressed_batch(const std::shared_ptr<arrow::Rec
     return arrow::Status::OK();
 }
 
-void serialize_data_compressed(uint64_t header, std::vector<data<uint64_t>>& data) {
+void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
     std::ofstream bin_ofstream(TEST_OUTPUT_FILE_NAME_BIN, std::ios::binary);
     if (!bin_ofstream.is_open()) {
         std::cerr << "Failed to open integration file as test output buffer." << std::endl;
         exit(1);
     }
-    auto br = BitWriter(bin_ofstream);
-    PairsCompressor c_bin(br, header);
+    auto br = std::make_shared<BitWriter>(bin_ofstream);
+    PairsCompressor c_bin(br);
     for (auto data_pair : data) {
         c_bin.compress(std::make_pair(data_pair.time, data_pair.value));
     }
@@ -41,17 +41,10 @@ void serialize_data_compressed(uint64_t header, std::vector<data<uint64_t>>& dat
     bin_ofstream.close();
 }
 
-void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
-    auto first_time = data[0].time;
-    auto header = first_time - (first_time % (60 * 60 * 2));
-
-    return serialize_data_compressed(header, data);
-}
-
-arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<data<uint64_t>>& data) {
+arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& data) {
     std::stringstream stream;
-    auto bw = BitWriter(stream);
-    PairsCompressor c(bw, header);
+    auto bw = std::make_shared<BitWriter>(stream);
+    PairsCompressor c(bw);
     for (auto data_pair : data) {
         c.compress(std::make_pair(data_pair.time, data_pair.value));
     }
@@ -85,13 +78,6 @@ arrow::Status serialize_data_compressed_to_batch(uint64_t header, std::vector<da
     return arrow::Status::OK();
 }
 
-arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& data) {
-    auto first_time = data[0].time;
-    auto header = getHeaderFromTimestamp(first_time);
-
-    return serialize_data_compressed_to_batch(header, data);
-}
-
 arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch() {
     std::shared_ptr<arrow::io::ReadableFile> infile;
     ARROW_ASSIGN_OR_RAISE(infile, arrow::io::ReadableFile::Open(
@@ -114,7 +100,7 @@ arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch(
         in_stream << *value;
     }
 
-    auto br = BitReader(in_stream);
+    auto br = std::make_shared<BitReader>(in_stream);
     PairsDecompressor d(br);
     auto d_header = d.getHeader();
 

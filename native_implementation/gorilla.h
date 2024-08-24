@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 #include <bit>
 #include <optional>
@@ -17,7 +18,7 @@
 // ---------- COMPRESSION ------------------
 class BitWriter {
 public:
-    explicit BitWriter(std::ostream &os) : out(&os), buffer(0), count(8) {}
+    explicit BitWriter(std::ostream &os) : out(os), buffer(0), count(8) {}
 
     // Write a single bit at the available right-most position of the `buffer`.
     void writeBit(bool bit) {
@@ -97,10 +98,11 @@ public:
 
 private:
     void writeBuf() {
-        out->write(reinterpret_cast<const char *>(&buffer), sizeof(buffer));
+        auto casted_buffer = reinterpret_cast<const char *>(&buffer);
+        out.write(casted_buffer, sizeof(buffer));
     }
 
-    std::ostream *out;
+    std::ostream &out;
     uint8_t buffer;
     // How many right-most bits are available for writing in the current byte (the last byte of the buffer).
     uint8_t count;
@@ -141,7 +143,9 @@ uint64_t getHeaderFromTimestamp(uint64_t first_time) {
 template<typename T>
 class CompressorBase {
 public:
-    explicit CompressorBase(BitWriter& bw) : bw_(bw), first_compressed_(false) {}
+    explicit CompressorBase(std::shared_ptr<BitWriter> bw) : bw_(std::move(bw)), first_compressed_(false) {}
+
+    virtual ~CompressorBase() = default;
 
     virtual void compressFirst(T) = 0;
 
@@ -158,18 +162,17 @@ public:
     virtual void finish() = 0;
 
 protected:
-    BitWriter &bw_;
+    std::shared_ptr<BitWriter> bw_;
     bool first_compressed_;
 };
 
 class TimestampsCompressor : public CompressorBase<uint64_t> {
 public:
-    TimestampsCompressor(BitWriter& bw, uint64_t header) : CompressorBase(bw),
-                                                                                 header_(header) {
-        bw_.writeBits(header_, 64);
-    }
+    explicit TimestampsCompressor(std::shared_ptr<BitWriter> bw) : CompressorBase(std::move(bw)), header_(0) {}
 
     void compressFirst(uint64_t t) override {
+        header_ = getHeaderFromTimestamp(t);
+        bw_->writeBits(header_, 64);
         if (t - header_ < 0) {
             std::cerr << "First time passed for compression is less than header." << std::endl;
             std::cerr << "Header: " << header_ << ". Time: " << t << "." << std::endl;
@@ -178,7 +181,7 @@ public:
         int64_t delta = static_cast<int64_t>(t) - static_cast<int64_t>(header_);
         t_ = t;
         t_delta_ = delta;
-        bw_.writeBits(delta, FIRST_DELTA_BITS);
+        bw_->writeBits(delta, FIRST_DELTA_BITS);
         first_compressed_ = true;
     }
 
@@ -190,36 +193,36 @@ public:
         t_delta_ = delta;
 
         if (dod == 0) {
-            bw_.writeBit(false);
+            bw_->writeBit(false);
         } else if (-63 <= dod && dod <= 64) {
-            bw_.writeBits(0x02, 2);
+            bw_->writeBits(0x02, 2);
             writeInt64Bits(dod, 7);
         } else if (-255 <= dod && dod <= 256) {
-            bw_.writeBits(0x06, 3);
+            bw_->writeBits(0x06, 3);
             writeInt64Bits(dod, 9);
         } else if (-2047 <= dod && dod <= 2048) {
-            bw_.writeBits(0x0E, 4);
+            bw_->writeBits(0x0E, 4);
             writeInt64Bits(dod, 12);
         } else {
-            bw_.writeBits(0x0F, 4);
+            bw_->writeBits(0x0F, 4);
             writeInt64Bits(dod, 64);
         }
     }
 
     void finish() override {
         if (!first_compressed_) {
-            bw_.writeBits((1 << FIRST_DELTA_BITS) - 1, FIRST_DELTA_BITS);
-            bw_.writeBits(0, 64);
-            bw_.flush(false);
+            bw_->writeBits((1 << FIRST_DELTA_BITS) - 1, FIRST_DELTA_BITS);
+            bw_->writeBits(0, 64);
+            bw_->flush(false);
             return;
         }
 
         // 0x0F           = 00001111 -> 1111 (cutted).
-        bw_.writeBits(0x0F, 4);
+        bw_->writeBits(0x0F, 4);
         // 0xFFFFFFFF     = 11111111 11111111 11111111 11111111
-        bw_.writeBits(0xFFFFFFFFFFFFFFFF, 64);
-        bw_.writeBit(false);
-        bw_.flush(false);
+        bw_->writeBits(0xFFFFFFFFFFFFFFFF, 64);
+        bw_->writeBit(false);
+        bw_->flush(false);
     }
 
 private:
@@ -230,7 +233,7 @@ private:
         } else {
             u = static_cast<uint64_t>((1 << nbits) + i);
         }
-        bw_.writeBits(u, int(nbits));
+        bw_->writeBits(u, int(nbits));
     }
 
     // Header bits.
@@ -244,11 +247,11 @@ private:
 
 class ValuesCompressor : public CompressorBase<uint64_t> {
 public:
-    explicit ValuesCompressor(BitWriter& bw) : CompressorBase(bw), leading_zeros_(INT8_MAX) {}
+    explicit ValuesCompressor(std::shared_ptr<BitWriter> bw) : CompressorBase(std::move(bw)), leading_zeros_(INT8_MAX) {}
 
     void compressFirst(uint64_t v) override {
         value_ = v;
-        bw_.writeBits(value_, 64);
+        bw_->writeBits(value_, 64);
         first_compressed_ = true;
     }
 
@@ -257,46 +260,46 @@ public:
         value_ = v;
 
         if (xor_val == 0) {
-            bw_.writeBit(false);
+            bw_->writeBit(false);
             return;
         }
 
         uint8_t leading_zeros_val = leadingZeros(xor_val);
         uint8_t trailing_zeros_val = trailingZeros(xor_val);
 
-        bw_.writeBit(true);
+        bw_->writeBit(true);
 
         if (leading_zeros_ <= leading_zeros_val && trailing_zeros_ <= trailing_zeros_val) {
-            bw_.writeBit(false);
+            bw_->writeBit(false);
             int significant_bits = 64 - leading_zeros_ - trailing_zeros_;
-            bw_.writeBits(xor_val >> trailing_zeros_, significant_bits);
+            bw_->writeBits(xor_val >> trailing_zeros_, significant_bits);
             return;
         }
 
         leading_zeros_ = leading_zeros_val;
         trailing_zeros_ = trailing_zeros_val;
 
-        bw_.writeBit(true);
-        bw_.writeBits(leading_zeros_, 6);
+        bw_->writeBit(true);
+        bw_->writeBits(leading_zeros_, 6);
         int significant_bits = 64 - leading_zeros_ - trailing_zeros_;
-        bw_.writeBits(static_cast<uint64_t>(significant_bits), 6);
-        bw_.writeBits(xor_val >> trailing_zeros_val, significant_bits);
+        bw_->writeBits(static_cast<uint64_t>(significant_bits), 6);
+        bw_->writeBits(xor_val >> trailing_zeros_val, significant_bits);
     }
 
     void finish() override {
         if (!first_compressed_) {
-            bw_.writeBits(0, 64);
-            bw_.flush(false);
+            bw_->writeBits(0, 64);
+            bw_->flush(false);
             return;
         }
 
-        bw_.writeBit(true);
-        bw_.writeBit(true);
+        bw_->writeBit(true);
+        bw_->writeBit(true);
 
         // 0x3F = 00111111 -> 111111 (cutted).
-        bw_.writeBits(0x3F, 6);
-        bw_.writeBits(0x3F, 6);
-        bw_.flush(false);
+        bw_->writeBits(0x3F, 6);
+        bw_->writeBits(0x3F, 6);
+        bw_->flush(false);
     }
 
 private:
@@ -312,7 +315,7 @@ private:
 // 3.) Unable to decompress 0xFFFFFFFFFFFFFFFF as value as currently it's reserved as a flag of series end.
 class PairsCompressor : public CompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    PairsCompressor(BitWriter& bw, uint64_t header) : CompressorBase(bw), compressor_ts_(bw, header), compressor_value_(bw) {}
+    explicit PairsCompressor(const std::shared_ptr<BitWriter>& bw) : CompressorBase(bw), compressor_ts_(bw), compressor_value_(bw) {}
 
     void compressFirst(std::pair<uint64_t, uint64_t> entity) override {
         auto [t, v] = entity;
@@ -414,7 +417,9 @@ private:
 template<typename T>
 class DecompressorBase {
 public:
-    explicit DecompressorBase(BitReader& bw) : br_(bw), first_decompressed_(false) {}
+    explicit DecompressorBase(std::shared_ptr<BitReader> bw) : br_(std::move(bw)), first_decompressed_(false) {}
+
+    virtual ~DecompressorBase() = default;
 
     std::optional<T> next() {
         if (first_decompressed_) {
@@ -430,22 +435,21 @@ private:
     virtual std::optional<T> decompressNonFirst() = 0;
 
 protected:
-    BitReader &br_;
+    std::shared_ptr<BitReader> br_;
     bool first_decompressed_ = true;
 };
 
 class TimestampsDecompressor : public DecompressorBase<uint64_t > {
 public:
-    explicit TimestampsDecompressor(BitReader& br) : DecompressorBase(br) {
-        header_ = br_.readBits(64);
-    }
+    explicit TimestampsDecompressor(std::shared_ptr<BitReader> br) : DecompressorBase(std::move(br)) {}
 
     [[nodiscard]] uint64_t getHeader() const {
         return header_;
     }
 
     std::optional<uint64_t> decompressFirst() override {
-        uint64_t delta_u64 = br_.readBits(FIRST_DELTA_BITS);
+        header_ = br_->readBits(64);
+        uint64_t delta_u64 = br_->readBits(FIRST_DELTA_BITS);
         int64_t delta = *reinterpret_cast<int64_t *>(&delta_u64);
 
         if (delta == ((1 << FIRST_DELTA_BITS) - 1)) {
@@ -466,7 +470,7 @@ public:
             return t_;
         }
 
-        uint64_t bits = br_.readBits(n);
+        uint64_t bits = br_->readBits(n);
 
         if (n == 64 && bits == 0xFFFFFFFFFFFFFFFF) {
             return std::nullopt;
@@ -488,7 +492,7 @@ private:
         uint8_t dod = 0;
         for (int i = 0; i < 4; i++) {
             dod <<= 1;
-            bool bit = br_.readBit();
+            bool bit = br_->readBit();
             if (bit) {
                 dod |= 1;
             } else {
@@ -521,10 +525,10 @@ private:
 
 class ValuesDecompressor : public DecompressorBase<uint64_t> {
 public:
-    explicit ValuesDecompressor(BitReader& br) : DecompressorBase(br) {}
+    explicit ValuesDecompressor(std::shared_ptr<BitReader> br) : DecompressorBase(std::move(br)) {}
 
     std::optional<uint64_t> decompressFirst() override {
-        uint64_t value = br_.readBits(64);
+        uint64_t value = br_->readBits(64);
 
         if (value == 0xFFFFFFFFFFFFFFFF) {
             return std::nullopt;
@@ -537,7 +541,7 @@ public:
     std::optional<uint64_t> decompressNonFirst() override {
         uint8_t read = 0;
         for (int i = 0; i < 2; i++) {
-            bool bit = br_.readBit();
+            bool bit = br_->readBit();
             if (bit) {
                 read <<= 1;
                 read++;
@@ -548,8 +552,8 @@ public:
 
         if (read == 0x1 || read == 0x3) {
             if (read == 0x3) {
-                uint8_t leading_zeroes = br_.readBits(6);
-                uint8_t significant_bits = br_.readBits(6);
+                uint8_t leading_zeroes = br_->readBits(6);
+                uint8_t significant_bits = br_->readBits(6);
 
                 if (leading_zeroes == 0x3F && significant_bits == 0x3F) {
                     return std::nullopt;
@@ -562,7 +566,7 @@ public:
                 trailing_zeros_ = 64 - significant_bits - leading_zeros_;
             }
 
-            uint64_t value_bits = br_.readBits(64 - leading_zeros_ - trailing_zeros_);
+            uint64_t value_bits = br_->readBits(64 - leading_zeros_ - trailing_zeros_);
             value_bits <<= trailing_zeros_;
             value_ ^= value_bits;
         }
@@ -578,7 +582,7 @@ private:
 
 class PairsDecompressor : public DecompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    explicit PairsDecompressor(BitReader& br) : DecompressorBase(br), decompressor_ts_(br), decompressor_value_(br) {}
+    explicit PairsDecompressor(const std::shared_ptr<BitReader>& br) : DecompressorBase(br), decompressor_ts_(br), decompressor_value_(br) {}
 
     [[nodiscard]] uint64_t getHeader() const {
         return decompressor_ts_.getHeader();

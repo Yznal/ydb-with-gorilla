@@ -27,11 +27,10 @@ void test_compress_decompress_pairs() {
         return;
     }
     auto test_data = get_test_data_vec<uint64_t>();
-    auto header = test_data.first;
     auto data_vec = test_data.second;
     std::cout << "Actual header is: " << header << std::endl;
     auto bw = BitWriter(buffer_out);
-    PairsCompressor c(bw, header);
+    PairsCompressor c(bw);
     for (auto data : data_vec) {
         c.compress(std::make_pair(data.time, data.value));
     }
