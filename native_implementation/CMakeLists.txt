@@ -6,23 +6,19 @@ set(CMAKE_CXX_STANDARD 20)
 add_executable(
         bit_writer_test
         bit_writer_test.cpp
-        gorilla_bit_writer.h
+        gorilla.h
 )
 
 add_executable(
         bit_wr_test
         test_bit_reader_writer.cpp
-        gorilla_bit_writer.h
-        gorilla_bit_reader.h
+        gorilla.h
 )
 
 add_executable(
         gorilla_test
         test_gorilla.cpp
-        gorilla_bit_writer.h
-        gorilla_compressor.h
-        gorilla_bit_reader.h
-        gorilla_decompressor.h
+        gorilla.h
 )
 
 option(ARROW_LINK_SHARED "Link to the Arrow shared library" ON)

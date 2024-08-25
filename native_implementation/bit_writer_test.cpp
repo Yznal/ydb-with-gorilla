@@ -1,6 +1,6 @@
 #include <vector>
 #include <sstream>
-#include "gorilla_bit_writer.h"
+#include "gorilla.h"
 
 using namespace std;
 
