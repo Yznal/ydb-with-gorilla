@@ -1,6 +1,12 @@
 #pragma once
 
-// File containing all the logic from previously many header files.
+// C++ version of https://github.com/keisku/gorilla with support of Apache Arrow batches (de)serialization.
+//
+// For ready to use C++ implementation see
+// * https://github.com/andybbruno/TSXor/tree/master/benchmark/algo/core
+// * [Original Facebook implementation](https://github.com/facebookarchive/beringei/blob/master/beringei/lib/TimeSeriesStream.cpp)
+//
+// Main testing executable is `arrow_gorilla_test`.
 
 #include <iostream>
 #include <fstream>
@@ -147,7 +153,12 @@ public:
 
     virtual ~CompressorBase() = default;
 
-    virtual void compressFirst(T) = 0;
+    void compressFirst(T entity) {
+        compressFirstInner(entity);
+        first_compressed_ = true;
+    }
+
+    virtual void compressFirstInner(T) = 0;
 
     virtual void compressNonFirst(T) = 0;
 
@@ -170,7 +181,7 @@ class TimestampsCompressor : public CompressorBase<uint64_t> {
 public:
     explicit TimestampsCompressor(std::shared_ptr<BitWriter> bw) : CompressorBase(std::move(bw)), header_(0) {}
 
-    void compressFirst(uint64_t t) override {
+    void compressFirstInner(uint64_t t) override {
         header_ = getHeaderFromTimestamp(t);
         bw_->writeBits(header_, 64);
         if (t - header_ < 0) {
@@ -182,7 +193,6 @@ public:
         t_ = t;
         t_delta_ = delta;
         bw_->writeBits(delta, FIRST_DELTA_BITS);
-        first_compressed_ = true;
     }
 
     void compressNonFirst(uint64_t t) override {
@@ -247,12 +257,12 @@ private:
 
 class ValuesCompressor : public CompressorBase<uint64_t> {
 public:
-    explicit ValuesCompressor(std::shared_ptr<BitWriter> bw) : CompressorBase(std::move(bw)), leading_zeros_(INT8_MAX) {}
+    explicit ValuesCompressor(std::shared_ptr<BitWriter> bw) : CompressorBase(std::move(bw)),
+                                                               leading_zeros_(INT8_MAX) {}
 
-    void compressFirst(uint64_t v) override {
+    void compressFirstInner(uint64_t v) override {
         value_ = v;
         bw_->writeBits(value_, 64);
-        first_compressed_ = true;
     }
 
     void compressNonFirst(uint64_t v) override {
@@ -315,13 +325,13 @@ private:
 // 3.) Unable to decompress 0xFFFFFFFFFFFFFFFF as value as currently it's reserved as a flag of series end.
 class PairsCompressor : public CompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    explicit PairsCompressor(const std::shared_ptr<BitWriter>& bw) : CompressorBase(bw), compressor_ts_(bw), compressor_value_(bw) {}
+    explicit PairsCompressor(const std::shared_ptr<BitWriter> &bw) : CompressorBase(bw), compressor_ts_(bw),
+                                                                     compressor_value_(bw) {}
 
-    void compressFirst(std::pair<uint64_t, uint64_t> entity) override {
+    void compressFirstInner(std::pair<uint64_t, uint64_t> entity) override {
         auto [t, v] = entity;
         compressor_ts_.compressFirst(t);
         compressor_value_.compressFirst(v);
-        first_compressed_ = true;
     }
 
     void compressNonFirst(std::pair<uint64_t, uint64_t> entity) override {
@@ -425,12 +435,20 @@ public:
         if (first_decompressed_) {
             return decompressNonFirst();
         } else {
-            return { decompressFirst() };
+            return {decompressFirst() };
         }
     }
 
+    std::optional<T> decompressFirst() {
+        auto res = decompressFirstInner();
+        if (res) {
+            first_decompressed_ = true;
+        }
+        return res;
+    }
+
 private:
-    virtual std::optional<T> decompressFirst() = 0;
+    virtual std::optional<T> decompressFirstInner() = 0;
 
     virtual std::optional<T> decompressNonFirst() = 0;
 
@@ -439,7 +457,7 @@ protected:
     bool first_decompressed_ = true;
 };
 
-class TimestampsDecompressor : public DecompressorBase<uint64_t > {
+class TimestampsDecompressor : public DecompressorBase<uint64_t> {
 public:
     explicit TimestampsDecompressor(std::shared_ptr<BitReader> br) : DecompressorBase(std::move(br)) {}
 
@@ -447,7 +465,7 @@ public:
         return header_;
     }
 
-    std::optional<uint64_t> decompressFirst() override {
+    std::optional<uint64_t> decompressFirstInner() override {
         header_ = br_->readBits(64);
         uint64_t delta_u64 = br_->readBits(FIRST_DELTA_BITS);
         int64_t delta = *reinterpret_cast<int64_t *>(&delta_u64);
@@ -458,8 +476,7 @@ public:
 
         t_delta_ = delta;
         t_ = header_ + t_delta_;
-        first_decompressed_ = true;
-        return { t_ };
+        return {t_};
     }
 
     std::optional<uint64_t> decompressNonFirst() override {
@@ -527,15 +544,14 @@ class ValuesDecompressor : public DecompressorBase<uint64_t> {
 public:
     explicit ValuesDecompressor(std::shared_ptr<BitReader> br) : DecompressorBase(std::move(br)) {}
 
-    std::optional<uint64_t> decompressFirst() override {
+    std::optional<uint64_t> decompressFirstInner() override {
         uint64_t value = br_->readBits(64);
 
         if (value == 0xFFFFFFFFFFFFFFFF) {
             return std::nullopt;
         }
 
-        first_decompressed_ = true;
-        return { value };
+        return {value};
     }
 
     std::optional<uint64_t> decompressNonFirst() override {
@@ -582,14 +598,15 @@ private:
 
 class PairsDecompressor : public DecompressorBase<std::pair<uint64_t, uint64_t>> {
 public:
-    explicit PairsDecompressor(const std::shared_ptr<BitReader>& br) : DecompressorBase(br), decompressor_ts_(br), decompressor_value_(br) {}
+    explicit PairsDecompressor(const std::shared_ptr<BitReader> &br) : DecompressorBase(br), decompressor_ts_(br),
+                                                                       decompressor_value_(br) {}
 
     [[nodiscard]] uint64_t getHeader() const {
         return decompressor_ts_.getHeader();
     }
 
 private:
-    [[nodiscard]] std::optional<std::pair<uint64_t, uint64_t>> decompressFirst() override {
+    [[nodiscard]] std::optional<std::pair<uint64_t, uint64_t>> decompressFirstInner() override {
         auto t = decompressor_ts_.decompressFirst();
         if (!t) {
             return std::nullopt;
@@ -599,8 +616,7 @@ private:
             return std::nullopt;
         }
 
-        first_decompressed_ = true;
-        return { std::make_pair(*t, *v) };
+        return {std::make_pair(*t, *v)};
     }
 
     std::optional<std::pair<uint64_t, uint64_t>> decompressNonFirst() override {
@@ -612,10 +628,280 @@ private:
         if (!v) {
             return std::nullopt;
         }
-        return { std::make_pair(*t, *v) };
+        return {std::make_pair(*t, *v)};
     }
 
     TimestampsDecompressor decompressor_ts_;
     ValuesDecompressor decompressor_value_;
 };
 // ---------- DECOMPRESSION ----------------
+
+
+
+// ---------- APACHE ARROW HELPERS --------------
+uint64_t getU64FromArrayData(
+        std::shared_ptr<arrow::DataType> &column_type,
+        std::shared_ptr<arrow::ArrayData> &array_data,
+        size_t i
+) {
+    uint64_t reinterpreted_value;
+    if (column_type->Equals(arrow::uint64())) {
+        uint64_t value = array_data->GetValues<uint64_t>(1)[i];
+        reinterpreted_value = *reinterpret_cast<uint64_t *>(&value);
+    } else if (column_type->Equals(arrow::uint32())) {
+        uint32_t value = array_data->GetValues<uint32_t>(1)[i];
+        reinterpreted_value = *reinterpret_cast<uint64_t *>(&value);
+    } else if (column_type->Equals(arrow::DoubleType())) {
+        double value = array_data->GetValues<double>(1)[i];
+        reinterpreted_value = *reinterpret_cast<uint64_t *>(&value);
+    } else if (column_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+        arrow::TimestampArray casted_timestamp_data(array_data);
+        reinterpreted_value = casted_timestamp_data.Value(i);
+    } else {
+        std::cerr << "Unknown value column type met for uint64_t serialization: " << *column_type << std::endl;
+        exit(1);
+    }
+    return reinterpreted_value;
+}
+
+std::shared_ptr<arrow::ArrayBuilder> getColumnBuilderByType(
+        std::shared_ptr<arrow::DataType> &column_type
+) {
+    std::shared_ptr<arrow::ArrayBuilder> value_column_builder;
+    if (column_type->Equals(arrow::uint64())) {
+        value_column_builder = std::make_shared<arrow::UInt64Builder>();
+    } else if (column_type->Equals(arrow::uint32())) {
+        value_column_builder = std::make_shared<arrow::UInt32Builder>();
+    } else if (column_type->Equals(arrow::DoubleType())) {
+        value_column_builder = std::make_shared<arrow::DoubleBuilder>();
+    } else if (column_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+        value_column_builder = std::make_shared<arrow::TimestampBuilder>(
+                arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO), arrow::default_memory_pool());
+    } else {
+        std::cerr << "Unknown value column type met to get column builder: " << *column_type << std::endl;
+        exit(1);
+    }
+    return value_column_builder;
+}
+
+arrow::Status builderAppendValue(
+        std::shared_ptr<arrow::DataType> &column_type,
+        std::shared_ptr<arrow::ArrayBuilder> &column_builder,
+        uint64_t value
+) {
+    if (column_type->Equals(arrow::uint64())) {
+        ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::UInt64Builder>(column_builder)->Append(value));
+    } else if (column_type->Equals(arrow::uint32())) {
+        uint32_t reinterpreted_value = *reinterpret_cast<uint32_t *>(&value);
+        ARROW_RETURN_NOT_OK(
+                std::dynamic_pointer_cast<arrow::UInt32Builder>(column_builder)->Append(reinterpreted_value));
+    } else if (column_type->Equals(arrow::DoubleType())) {
+        double reinterpreted_value = *reinterpret_cast<double *>(&value);
+        ARROW_RETURN_NOT_OK(
+                std::dynamic_pointer_cast<arrow::DoubleBuilder>(column_builder)->Append(reinterpreted_value));
+    } else if (column_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+        ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::TimestampBuilder>(column_builder)->Append(value));
+    } else {
+        std::cerr << "Unknown value column type met to append value to builder: " << *column_type << std::endl;
+        exit(1);
+    }
+    return arrow::Status::OK();
+}
+
+std::vector<uint64_t> getU64VecFromBatch(
+        const std::shared_ptr<arrow::RecordBatch> &batch,
+        size_t column_index
+) {
+    std::vector<uint64_t> entities_vec;
+    auto data = batch->column_data()[column_index];
+    auto column_type = batch->schema()->field(column_index)->type();
+    auto array_size = data->length;
+
+    entities_vec.reserve(array_size);
+    for (int i = 0; i < array_size; i++) {
+        uint64_t reinterpretedValue = getU64FromArrayData(column_type, data, i);
+        entities_vec.push_back(reinterpretedValue);
+    }
+
+    return entities_vec;
+}
+
+template<typename T, typename F>
+arrow::Result<std::string> serializeBatchEntities(
+        const std::shared_ptr<arrow::Schema> &batch_schema,
+        std::vector<T> &entities,
+        F create_c_func
+) {
+    auto schema_serialized_buffer = arrow::ipc::SerializeSchema(*batch_schema).ValueOrDie();
+    auto schema_serialized_str = schema_serialized_buffer->ToString();
+
+    std::stringstream out_stream;
+    auto arrays_size = entities.size();
+
+    std::unique_ptr<CompressorBase<T>> c = create_c_func(out_stream);
+    for (int i = 0; i < arrays_size; i++) {
+        c->compress(entities[i]);
+    }
+    c->finish();
+    std::string compressed = out_stream.str();
+
+    return {std::to_string(schema_serialized_str.length()) + "\n" + schema_serialized_str + compressed};
+}
+
+arrow::Result<std::string> serializeSingleColumnBatch(
+        const std::shared_ptr<arrow::RecordBatch> &batch
+) {
+    auto initial_schema = batch->schema();
+    auto column_type = initial_schema->field(0)->type();
+
+    auto entities_vec = getU64VecFromBatch(batch, 0);
+    arrow::Result<std::string> serialization_res;
+    if (column_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+        serialization_res = serializeBatchEntities(initial_schema, entities_vec, [](std::stringstream &out_stream) {
+            auto bw = std::make_shared<BitWriter>(out_stream);
+            return std::make_unique<TimestampsCompressor>(bw);
+        });
+    } else {
+        serialization_res = serializeBatchEntities(initial_schema, entities_vec, [](std::stringstream &out_stream) {
+            auto bw = std::make_shared<BitWriter>(out_stream);
+            return std::make_unique<ValuesCompressor>(bw);
+        });
+    }
+    return serialization_res;
+}
+
+arrow::Result<std::string> serializePairsBatch(
+        const std::shared_ptr<arrow::RecordBatch> &batch
+) {
+    auto initial_schema = batch->schema();
+
+    auto ts_vec = getU64VecFromBatch(batch, 0);
+    auto vs_vec = getU64VecFromBatch(batch, 1);
+    std::vector<std::pair<uint64_t, uint64_t>> zipped(ts_vec.size());
+    std::transform(ts_vec.begin(), ts_vec.end(), vs_vec.begin(), zipped.begin(),
+                   [](uint64_t a, uint64_t b) { return std::make_pair(a, b); });
+
+    arrow::Result<std::string> serialization_res = serializeBatchEntities(
+            initial_schema,
+            zipped,
+            [](std::stringstream &out_stream) {
+                auto bw = std::make_shared<BitWriter>(out_stream);
+                return std::make_unique<PairsCompressor>(bw);
+            });
+    return serialization_res;
+}
+
+template<typename T>
+std::vector<T> deserializeEntities(
+        std::unique_ptr<DecompressorBase<T>> &d
+) {
+    std::vector<T> entities;
+    std::optional<T> current_pair;
+    do {
+        current_pair = d->next();
+        if (current_pair) {
+            entities.push_back(*current_pair);
+        }
+    } while (current_pair);
+    return entities;
+}
+
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> deserializeSingleColumnBatch(
+        const std::string &data
+) {
+    // Deserialize batch schema.
+    size_t div_pos = data.find_first_of('\n');
+    if (div_pos == std::string::npos) {
+        std::cerr << "Newline divider not found in serialized file." << std::endl;
+        exit(1);
+    }
+    size_t schema_length;
+    std::stringstream header_ss((data.substr(0, div_pos)));
+    header_ss >> schema_length;
+    size_t schema_from_pos = div_pos + 1;
+    auto reader_stream = arrow::io::BufferReader::FromString(data.substr(schema_from_pos));
+    arrow::ipc::DictionaryMemo dictMemo;
+    auto schema = arrow::ipc::ReadSchema(reader_stream.get(), &dictMemo).ValueOrDie();
+
+    // Deserialize data.
+    auto column_type = schema->field(0)->type();
+    std::stringstream in_stream(data.substr(schema_from_pos + schema_length));
+    auto br = std::make_shared<BitReader>(in_stream);
+    std::unique_ptr<DecompressorBase<uint64_t>> d;
+    if (column_type->Equals(arrow::TimestampType(arrow::TimeUnit::MICRO))) {
+        d = std::make_unique<TimestampsDecompressor>(br);
+    } else {
+        d = std::make_unique<ValuesDecompressor>(br);
+    }
+    auto entities = deserializeEntities(d);
+
+    auto column_builder = getColumnBuilderByType(column_type);
+    for (auto e: entities) {
+        ARROW_RETURN_NOT_OK(builderAppendValue(column_type, column_builder, e));
+    }
+
+    std::shared_ptr<arrow::Array> column_array;
+    ARROW_ASSIGN_OR_RAISE(column_array, column_builder->Finish());
+
+    std::shared_ptr<arrow::RecordBatch> batch_deserialized = arrow::RecordBatch::Make(schema, entities.size(),
+                                                                                      {column_array});
+
+    auto validation = batch_deserialized->Validate();
+    if (!validation.ok()) {
+        std::cerr << "Validation error: " << validation.ToString() << std::endl;
+        return arrow::Status(arrow::StatusCode::SerializationError, "");
+    }
+
+    return {batch_deserialized};
+}
+
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> deserializePairsBatch(
+        const std::string &data
+) {
+    // Deserialize batch schema.
+    size_t div_pos = data.find_first_of('\n');
+    if (div_pos == std::string::npos) {
+        std::cerr << "Newline divider not found in serialized file." << std::endl;
+        exit(1);
+    }
+    size_t schema_length;
+    std::stringstream header_ss((data.substr(0, div_pos)));
+    header_ss >> schema_length;
+    size_t schema_from_pos = div_pos + 1;
+    auto reader_stream = arrow::io::BufferReader::FromString(data.substr(schema_from_pos));
+    arrow::ipc::DictionaryMemo dictMemo;
+    auto schema = arrow::ipc::ReadSchema(reader_stream.get(), &dictMemo).ValueOrDie();
+
+    // Deserialize data.
+    std::stringstream in_stream(data.substr(schema_from_pos + schema_length));
+    auto br = std::make_shared<BitReader>(in_stream);
+    std::unique_ptr<DecompressorBase<std::pair<uint64_t, uint64_t>>> d = std::make_unique<PairsDecompressor>(br);
+    auto entities = deserializeEntities(d);
+
+    auto ts_column_type = schema->field(0)->type();
+    auto vs_column_type = schema->field(1)->type();
+    auto ts_column_builder = getColumnBuilderByType(ts_column_type);
+    auto vs_column_builder = getColumnBuilderByType(vs_column_type);
+    for (auto [t, v]: entities) {
+        ARROW_RETURN_NOT_OK(builderAppendValue(ts_column_type, ts_column_builder, t));
+        ARROW_RETURN_NOT_OK(builderAppendValue(vs_column_type, vs_column_builder, v));
+    }
+
+    std::shared_ptr<arrow::Array> ts_column_array;
+    ARROW_ASSIGN_OR_RAISE(ts_column_array, ts_column_builder->Finish());
+    std::shared_ptr<arrow::Array> vs_column_array;
+    ARROW_ASSIGN_OR_RAISE(vs_column_array, vs_column_builder->Finish());
+
+    std::shared_ptr<arrow::RecordBatch> batch_deserialized = arrow::RecordBatch::Make(schema, entities.size(),
+                                                                                      {ts_column_array,
+                                                                                       vs_column_array});
+
+    auto validation = batch_deserialized->Validate();
+    if (!validation.ok()) {
+        std::cerr << "Validation error: " << validation.ToString() << std::endl;
+        return arrow::Status(arrow::StatusCode::SerializationError, "");
+    }
+
+    return {batch_deserialized};
+}
+// ---------- APACHE ARROW HELPERS --------------

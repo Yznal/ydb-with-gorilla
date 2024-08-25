@@ -16,7 +16,7 @@ const std::string TEST_OUTPUT_FILE_NAME_CSV = "arrow_output.csv";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW = "arrow_output.arrow";
 const std::string TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION = "arrow_output_no_compression.arrow";
 
-arrow::Status serialize_data_uncompressed_batch(const std::shared_ptr<arrow::RecordBatch>& batch) {
+arrow::Status serializeDataUncompressedBatch(const std::shared_ptr<arrow::RecordBatch>& batch) {
     std::shared_ptr<arrow::io::FileOutputStream> outfile;
     ARROW_ASSIGN_OR_RAISE(outfile, arrow::io::FileOutputStream::Open(TEST_OUTPUT_FILE_NAME_ARROW_NO_COMPRESSION));
     ARROW_ASSIGN_OR_RAISE(std::shared_ptr<arrow::ipc::RecordBatchWriter> writer,
@@ -26,7 +26,7 @@ arrow::Status serialize_data_uncompressed_batch(const std::shared_ptr<arrow::Rec
     return arrow::Status::OK();
 }
 
-void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
+void serializeDataCompressed(std::vector<data<uint64_t>>& data) {
     std::ofstream bin_ofstream(TEST_OUTPUT_FILE_NAME_BIN, std::ios::binary);
     if (!bin_ofstream.is_open()) {
         std::cerr << "Failed to open integration file as test output buffer." << std::endl;
@@ -41,7 +41,7 @@ void serialize_data_compressed(std::vector<data<uint64_t>>& data) {
     bin_ofstream.close();
 }
 
-arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& data) {
+arrow::Status serializeDataCompressedToBatch(std::vector<data<uint64_t>>& data) {
     std::stringstream stream;
     auto bw = std::make_shared<BitWriter>(stream);
     PairsCompressor c(bw);
@@ -78,7 +78,7 @@ arrow::Status serialize_data_compressed_to_batch(std::vector<data<uint64_t>>& da
     return arrow::Status::OK();
 }
 
-arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompress_data_batch() {
+arrow::Result<std::vector<std::pair<uint64_t, uint64_t>>> decompressDataBatch() {
     std::shared_ptr<arrow::io::ReadableFile> infile;
     ARROW_ASSIGN_OR_RAISE(infile, arrow::io::ReadableFile::Open(
             TEST_OUTPUT_FILE_NAME_ARROW, arrow::default_memory_pool()));

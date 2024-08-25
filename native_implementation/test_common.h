@@ -79,7 +79,7 @@ struct data {
     }
 };
 
-std::time_t get_date_timestamp(int year, int month, int day, int hour, int min, int sec) {
+std::time_t getDateTimestamp(int year, int month, int day, int hour, int min, int sec) {
     struct tm tm{};
     tm.tm_year = year - 1900;
     tm.tm_mon = month - 1;
@@ -103,7 +103,7 @@ int getRandomInRange(int minVal, int maxVal) {
 
 const size_t DEFAULT_TEST_DATA_LEN = 100;
 
-std::vector<uint64_t> get_test_data_vec_ts(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+std::vector<uint64_t> getTestDataVecTs(size_t data_len = DEFAULT_TEST_DATA_LEN) {
     auto data_vec_ts = std::vector<uint64_t>(data_len);
     uint64_t current_timestamp = 0;
     for (int i = 0; i < data_len; i++) {
@@ -120,7 +120,7 @@ std::vector<uint64_t> get_test_data_vec_ts(size_t data_len = DEFAULT_TEST_DATA_L
 }
 
 template<typename T>
-std::vector<T> get_test_data_vec_values(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+std::vector<T> getTestDataVecValues(size_t data_len = DEFAULT_TEST_DATA_LEN) {
     auto data_vec_values = std::vector<T>(data_len);
     T current_value = 0;
     for (int i = 0; i < data_len; i++) {
@@ -140,9 +140,9 @@ std::vector<T> get_test_data_vec_values(size_t data_len = DEFAULT_TEST_DATA_LEN)
 }
 
 template<typename T>
-std::vector<data<T>> get_test_data_vec(size_t data_len = DEFAULT_TEST_DATA_LEN) {
-    auto data_vec_ts = get_test_data_vec_ts(data_len);
-    auto data_vec_values = get_test_data_vec_values<T>(data_len);
+std::vector<data<T>> getTestDataVec(size_t data_len = DEFAULT_TEST_DATA_LEN) {
+    auto data_vec_ts = getTestDataVecTs(data_len);
+    auto data_vec_values = getTestDataVecValues<T>(data_len);
 
     auto data_vec = std::vector<data<T>>(data_len);
     for (int i = 0; i < data_len; i++) {
@@ -155,7 +155,7 @@ std::vector<data<T>> get_test_data_vec(size_t data_len = DEFAULT_TEST_DATA_LEN) 
 const std::string TEST_BATCH_COLUMN_NAME_TIME = "Time";
 const std::string TEST_BATCH_COLUMN_NAME_VALUE = "Value";
 
-arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch_ts(const std::vector<uint64_t>& data_vec) {
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> getTestDataBatchTs(const std::vector<uint64_t>& data_vec) {
     auto timeColumnBuilder = arrow::TimestampBuilder(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO),
                                                      arrow::default_memory_pool());
     for (const auto &data: data_vec) {
@@ -167,14 +167,14 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch_ts(const 
     std::shared_ptr<arrow::Field> fieldTime = arrow::field(TEST_BATCH_COLUMN_NAME_TIME, arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO));
 
     std::shared_ptr<arrow::Schema> schema = arrow::schema({fieldTime});
-    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema, 1,
+    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema, data_vec.size(),
                                                                          {timeColumnArray});
 
     return {batch};
 }
 
 template<typename T>
-arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch_vs(const std::vector<T>& data_vec) {
+arrow::Result<std::shared_ptr<arrow::RecordBatch>> getTestDataBatchVs(const std::vector<T>& data_vec) {
     std::shared_ptr<arrow::ArrayBuilder> valueColumnBuilder;
     if (std::is_same_v<T, uint64_t>) {
         valueColumnBuilder = std::make_shared<arrow::UInt64Builder>();
@@ -215,63 +215,73 @@ arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch_vs(const 
 
 
     std::shared_ptr<arrow::Schema> schema = arrow::schema({fieldValue});
-    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema, 1,
+    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema, data_vec.size(),
                                                                          {valueColumnArray});
 
     return {batch};
 }
 
-template<typename T>
-arrow::Result<std::shared_ptr<arrow::RecordBatch>> get_test_data_batch_pairs(const std::vector<data<T>>& data_vec) {
-    auto timeColumnBuilder = arrow::TimestampBuilder(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO),
-                                                     arrow::default_memory_pool());
-    std::shared_ptr<arrow::ArrayBuilder> valueColumnBuilder;
-    if (std::is_same_v<T, uint64_t>) {
-        valueColumnBuilder = std::make_shared<arrow::UInt64Builder>();
-    } else if (std::is_same_v<T, uint32_t>) {
-        valueColumnBuilder = std::make_shared<arrow::UInt32Builder>();
-    } else if (std::is_same_v<T, double>) {
-        valueColumnBuilder = std::make_shared<arrow::DoubleBuilder>();
-    } else {
-        std::cerr << "Unknown value column type to create batch." << std::endl;
-        exit(1);
+std::shared_ptr<arrow::RecordBatch> mergeRecordBatches(
+        const std::shared_ptr<arrow::RecordBatch>& batch1,
+        const std::shared_ptr<arrow::RecordBatch>& batch2
+) {
+    auto schema_builder = std::make_shared<arrow::SchemaBuilder>();
+    for (const auto& field : batch1->schema()->fields()) {
+        auto new_field_ptr = std::make_shared<arrow::Field>(field->name(), field->type());
+        (void) schema_builder->AddField(new_field_ptr);
     }
-    for (const auto &data: data_vec) {
-        ARROW_RETURN_NOT_OK(timeColumnBuilder.Append(data.time));
+    for (const auto& field : batch2->schema()->fields()) {
+        auto new_field_ptr = std::make_shared<arrow::Field>(field->name(), field->type());
+        (void) schema_builder->AddField(new_field_ptr);
+    }
+    auto combined_schema = schema_builder->Finish().ValueOrDie();
 
-        if (std::is_same_v<T, uint64_t>) {
-            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::UInt64Builder>(valueColumnBuilder)->Append(data.value));
-        } else if (std::is_same_v<T, uint32_t>) {
-            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::UInt32Builder>(valueColumnBuilder)->Append(data.value));
-        } else if (std::is_same_v<T, double>) {
-            ARROW_RETURN_NOT_OK(std::dynamic_pointer_cast<arrow::DoubleBuilder>(valueColumnBuilder)->Append(data.value));
-        } else {
-            std::cerr << "Unknown value column type met to append." << std::endl;
-            exit(1);
+    std::vector<std::shared_ptr<arrow::Array>> columns;
+    columns.reserve(batch1->num_columns() + batch2->num_columns());
+    for (int i = 0; i < batch1->num_columns(); ++i) {
+        columns.push_back(batch1->column(i));
+    }
+    for (int i = 0; i < batch2->num_columns(); ++i) {
+        columns.push_back(batch2->column(i));
+    }
+
+    auto merged_batch = arrow::RecordBatch::Make(combined_schema, batch1->num_rows(), columns);
+    return merged_batch;
+}
+
+std::shared_ptr<arrow::RecordBatch> getTestDataBatchPairs(
+        const std::shared_ptr<arrow::RecordBatch>& batch_ts,
+        const std::shared_ptr<arrow::RecordBatch>& batch_vs
+) {
+    return mergeRecordBatches(batch_ts, batch_vs);
+}
+
+void compareTwoBatches(
+        const std::shared_ptr<arrow::RecordBatch>& first,
+        const std::shared_ptr<arrow::RecordBatch>& second,
+        size_t columns_number
+) {
+    auto outSink = &std::cout;
+    if (!first->schema()->Equals(second->schema())) {
+        std::cerr << "Schemas are not equal after deserialization." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Schema is:" << std::endl;
+        (void) arrow::PrettyPrint(*first->schema(), 0, outSink);
+        std::cout << std::endl;
+    }
+
+    // Somewhy batch->Equals(another_batch) doesn't work.
+    for (int columns_index = 0; columns_index < columns_number; columns_index++) {
+        auto batch_column_expected = first->column(columns_index);
+        auto batch_column_actual = second->column(columns_index);
+
+        if (!batch_column_expected->Equals(batch_column_actual)) {
+            std::cout << "Columns with index " << columns_index << " are not equal." << std::endl;
+            std::cout << "Expected column: " << std::endl;
+            (void) arrow::PrettyPrint(*batch_column_expected, 0, outSink);
+            std::cout << "Actual column: " << std::endl;
+            (void) arrow::PrettyPrint(*batch_column_actual, 0, outSink);
         }
     }
-    std::shared_ptr<arrow::Array> timeColumnArray;
-    ARROW_ASSIGN_OR_RAISE(timeColumnArray, timeColumnBuilder.Finish());
-    std::shared_ptr<arrow::Array> valueColumnArray;
-    ARROW_ASSIGN_OR_RAISE(valueColumnArray, valueColumnBuilder->Finish());
-
-    std::shared_ptr<arrow::Field> fieldTime = arrow::field(TEST_BATCH_COLUMN_NAME_TIME, arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO));
-    std::shared_ptr<arrow::Field> fieldValue;
-    if (std::is_same_v<T, uint64_t>) {
-        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, arrow::uint64());
-    } else if (std::is_same_v<T, uint32_t>) {
-        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, arrow::uint32());
-    } else if (std::is_same_v<T, double>) {
-        fieldValue = arrow::field(TEST_BATCH_COLUMN_NAME_VALUE, std::make_shared<arrow::DoubleType>());
-    } else {
-        std::cerr << "Unknown value column type met to create column field." << std::endl;
-        exit(1);
-    }
-
-
-    std::shared_ptr<arrow::Schema> schema = arrow::schema({fieldTime, fieldValue});
-    std::shared_ptr<arrow::RecordBatch> batch = arrow::RecordBatch::Make(schema, 2,
-                                                                         {timeColumnArray, valueColumnArray});
-
-    return {batch};
 }

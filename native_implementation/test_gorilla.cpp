@@ -1,15 +1,3 @@
-// C++ version of https://github.com/keisku/gorilla.
-//
-// For benchmarks see:
-// * https://github.com/andybbruno/TSXor/tree/master/benchmark
-// * https://github.com/burmanm/gorilla-tsc/blob/master/src/main/java/fi/iki/yak/ts/compression/gorilla/benchmark/EncodingBenchmark.java
-//
-// Online float -> binary converter:
-// https://www.h-schmidt.net/FloatConverter/IEEE754.html
-//
-// For ready to use C++ implementation see
-// https://github.com/andybbruno/TSXor/tree/master/benchmark/algo/core
-
 #include <iostream>
 #include <ctime>
 #include <bitset>
@@ -19,14 +7,14 @@
 
 const std::string INTEGRATION_READ_WRITE_FILE_NAME = "integration.bin";
 
-void test_compress_decompress_pairs() {
+void testCompressDecompressPairs() {
     // Compress data.
     std::ofstream buffer_out(INTEGRATION_READ_WRITE_FILE_NAME, std::ios::binary);
     if (!buffer_out.is_open()) {
         std::cerr << "Failed to open integration file as output buffer." << std::endl;
         return;
     }
-    auto test_data = get_test_data_vec<uint64_t>();
+    auto test_data = getTestDataVec<uint64_t>();
     auto data_vec = test_data.second;
     std::cout << "Actual header is: " << header << std::endl;
     auto bw = BitWriter(buffer_out);
@@ -80,6 +68,6 @@ void test_compress_decompress_pairs() {
 // Commands to investigate binary representation of the testing file:
 // * Binary: `xxd -b integration.bin` (`xxd -b cmake-build-debug/integration.bin`)
 int main() {
-    test_compress_decompress_pairs();
+    testCompressDecompressPairs();
     return 0;
 }
